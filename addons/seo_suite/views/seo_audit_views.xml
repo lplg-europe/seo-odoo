@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="view_seo_audit_list" model="ir.ui.view">
+        <field name="name">seo.audit.list</field>
+        <field name="model">seo.audit</field>
+        <field name="arch" type="xml">
+            <list string="SEO Audits"
+                  decoration-danger="issue_count &gt; 0"
+                  decoration-success="issue_count == 0 and audit_date">
+                <field name="name"/>
+                <field name="status_code"/>
+                <field name="title"/>
+                <field name="word_count"/>
+                <field name="issue_count"/>
+                <field name="audit_date"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_seo_audit_form" model="ir.ui.view">
+        <field name="name">seo.audit.form</field>
+        <field name="model">seo.audit</field>
+        <field name="arch" type="xml">
+            <form string="SEO Audit">
+                <header>
+                    <button name="action_run_audit" type="object"
+                            string="Run audit" class="btn-primary"
+                            icon="fa-search"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <label for="name" string="URL"/>
+                        <h1><field name="name" placeholder="https://example.com"/></h1>
+                    </div>
+                    <group>
+                        <group string="Result">
+                            <field name="status_code"/>
+                            <field name="final_url" widget="url"/>
+                            <field name="audit_date"/>
+                            <field name="issue_count"/>
+                        </group>
+                        <group string="Content">
+                            <field name="word_count"/>
+                            <field name="internal_links"/>
+                            <field name="external_links"/>
+                            <field name="images"/>
+                            <field name="images_without_alt"/>
+                        </group>
+                    </group>
+                    <group string="On-page">
+                        <field name="title"/>
+                        <field name="title_length"/>
+                        <field name="meta_description"/>
+                        <field name="meta_description_length"/>
+                        <field name="h1"/>
+                        <field name="canonical"/>
+                        <field name="meta_robots"/>
+                    </group>
+                    <group string="Detected issues">
+                        <field name="issues" nolabel="1"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_seo_audit" model="ir.actions.act_window">
+        <field name="name">SEO Audits</field>
+        <field name="res_model">seo.audit</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Run your first SEO audit</p>
+            <p>Enter a URL, click "Run audit" and SEO Suite analyzes the page
+               (title, meta, H1, canonical, links, images) and lists the detected issues.</p>
+        </field>
+    </record>
+
+    <menuitem id="menu_seo_root" name="SEO"
+              web_icon="seo_suite,static/description/icon.png" sequence="90"/>
+    <menuitem id="menu_seo_audit" name="Audits"
+              parent="menu_seo_root" action="action_seo_audit" sequence="10"/>
+
+</odoo>
