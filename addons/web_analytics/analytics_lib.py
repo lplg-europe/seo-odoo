@@ -116,6 +116,25 @@ def referrer_host(referrer, own_host=""):
     return "" if not host or host == own else host
 
 
+def check_http(url, timeout=15):
+    """Uptime probe. Returns (status, response_ms, error)."""
+    import time
+    import urllib.error
+    import urllib.request
+    request = urllib.request.Request(
+        url, headers={"User-Agent": "WebAnalytics-Monitor/1.0"})
+    started = time.monotonic()
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as resp:
+            resp.read(65536)
+            return (resp.status,
+                    int((time.monotonic() - started) * 1000), "")
+    except urllib.error.HTTPError as e:
+        return e.code, int((time.monotonic() - started) * 1000), ""
+    except Exception as e:  # noqa: BLE001
+        return 0, int((time.monotonic() - started) * 1000), str(e)[:200]
+
+
 def classify_channel(ref_host, utm_medium, utm_source, has_paid_ids):
     """Acquisition channel, simplified from industry-standard groupings."""
     medium = (utm_medium or "").lower()

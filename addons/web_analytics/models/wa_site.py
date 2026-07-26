@@ -38,6 +38,17 @@ class WebAnalyticsSite(models.Model):
         compute="_compute_stats", string="Pageviews (30d)")
     sessions_30d = fields.Integer(
         compute="_compute_stats", string="Sessions (30d)")
+    bounce_rate_30d = fields.Integer(
+        compute="_compute_stats", string="Bounce rate (%)",
+        help="Sessions with a single pageview (30 days).")
+    avg_session_seconds_30d = fields.Integer(
+        compute="_compute_stats", string="Avg session (s)")
+    lcp_p75_ms = fields.Integer(
+        compute="_compute_stats", string="LCP p75 (ms)",
+        help="75th percentile of Largest Contentful Paint (30 days) — "
+             "good is under 2500 ms.")
+    goal_ids = fields.One2many(
+        "web.analytics.goal", "site_id", string="Goals")
 
     def _compute_snippet(self):
         base_url = self.env["ir.config_parameter"].sudo().get_param(
@@ -74,6 +85,38 @@ class WebAnalyticsSite(models.Model):
             rec.sessions_30d = Event.search_count(
                 base + [("timestamp", ">=", month),
                         ("is_new_session", "=", True)])
+            rec._compute_sql_stats(month)
+
+    def _compute_sql_stats(self, since):
+        """Bounce rate, avg session duration and LCP p75 (raw SQL —
+        window/percentile aggregates the ORM cannot express)."""
+        self.ensure_one()
+        self.env.cr.execute("""
+            WITH s AS (
+                SELECT session_id,
+                       COUNT(*) FILTER (WHERE event_type = 'pageview') AS pv,
+                       EXTRACT(EPOCH FROM MAX(timestamp) - MIN(timestamp))
+                           AS duration
+                FROM web_analytics_event
+                WHERE site_id = %s AND timestamp >= %s
+                GROUP BY session_id)
+            SELECT
+                COALESCE(ROUND(100.0 * COUNT(*) FILTER (WHERE pv <= 1)
+                         / NULLIF(COUNT(*), 0)), 0),
+                COALESCE(ROUND(AVG(duration)), 0)
+            FROM s
+        """, (self.id, since))
+        bounce, avg_duration = self.env.cr.fetchone()
+        self.bounce_rate_30d = int(bounce or 0)
+        self.avg_session_seconds_30d = int(avg_duration or 0)
+        self.env.cr.execute("""
+            SELECT COALESCE(PERCENTILE_CONT(0.75)
+                   WITHIN GROUP (ORDER BY lcp_ms), 0)
+            FROM web_analytics_event
+            WHERE site_id = %s AND timestamp >= %s
+              AND event_type = 'performance' AND lcp_ms > 0
+        """, (self.id, since))
+        self.lcp_p75_ms = int(self.env.cr.fetchone()[0] or 0)
 
     def action_view_events(self):
         self.ensure_one()

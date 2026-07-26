@@ -47,11 +47,29 @@
                             <field name="pageviews_today"/>
                             <field name="visitors_30d"/>
                             <field name="sessions_30d"/>
+                            <field name="bounce_rate_30d"/>
+                            <field name="avg_session_seconds_30d"/>
+                            <field name="lcp_p75_ms"/>
                         </group>
                     </group>
                     <group string="Tracking snippet (paste before &lt;/head&gt;)">
                         <field name="snippet" nolabel="1" readonly="1"
                                class="font-monospace"/>
+                    </group>
+                    <group string="Conversion goals">
+                        <field name="goal_ids" nolabel="1"
+                               context="{'default_site_id': id}">
+                            <list editable="bottom">
+                                <field name="name"/>
+                                <field name="goal_type"/>
+                                <field name="pattern"/>
+                                <field name="conversions_30d"/>
+                                <field name="conversion_rate"/>
+                                <button name="action_view_conversions"
+                                        type="object" icon="fa-filter"
+                                        title="View conversions"/>
+                            </list>
+                        </field>
                     </group>
                 </sheet>
             </form>
@@ -73,9 +91,13 @@
                 <field name="device_type"/>
                 <field name="browser" optional="show"/>
                 <field name="os" optional="hide"/>
+                <field name="country" optional="show"/>
                 <field name="lang" optional="hide"/>
                 <field name="utm_source" optional="hide"/>
                 <field name="utm_campaign" optional="hide"/>
+                <field name="lcp_ms" optional="hide"/>
+                <field name="cls_milli" optional="hide"/>
+                <field name="ttfb_ms" optional="hide"/>
                 <field name="visitor_hash" optional="hide"/>
                 <field name="session_id" optional="hide"/>
             </list>
@@ -92,6 +114,12 @@
                 <field name="site_id"/>
                 <filter name="filter_pageviews" string="Pageviews"
                         domain="[('event_type', '=', 'pageview')]"/>
+                <filter name="filter_outbound" string="Outbound clicks"
+                        domain="[('event_type', '=', 'outbound')]"/>
+                <filter name="filter_errors" string="JS errors"
+                        domain="[('event_type', '=', 'error')]"/>
+                <filter name="filter_vitals" string="Web vitals"
+                        domain="[('event_type', '=', 'performance')]"/>
                 <filter name="filter_new_sessions" string="Session starts"
                         domain="[('is_new_session', '=', True)]"/>
                 <separator/>
@@ -168,6 +196,101 @@
         <field name="context">{'search_default_filter_today': 1}</field>
     </record>
 
+    <record id="view_wa_monitor_list" model="ir.ui.view">
+        <field name="name">web.analytics.monitor.list</field>
+        <field name="model">web.analytics.monitor</field>
+        <field name="arch" type="xml">
+            <list string="Uptime monitors"
+                  decoration-danger="not is_up"
+                  decoration-success="is_up">
+                <field name="name"/>
+                <field name="url"/>
+                <field name="is_up"/>
+                <field name="last_status"/>
+                <field name="response_ms"/>
+                <field name="last_check"/>
+                <field name="last_change" optional="show"/>
+                <field name="downtime_count" optional="show"/>
+                <field name="interval_minutes" optional="hide"/>
+                <field name="notify_email" optional="hide"/>
+                <button name="action_check_now" type="object"
+                        icon="fa-refresh" title="Check now"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_wa_monitor_form" model="ir.ui.view">
+        <field name="name">web.analytics.monitor.form</field>
+        <field name="model">web.analytics.monitor</field>
+        <field name="arch" type="xml">
+            <form string="Uptime monitor">
+                <header>
+                    <button name="action_check_now" type="object"
+                            string="Check now" class="btn-primary"
+                            icon="fa-refresh"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="name" placeholder="My website"/></h1>
+                    </div>
+                    <group>
+                        <group string="Setup">
+                            <field name="url"
+                                   placeholder="https://www.my-website.be"/>
+                            <field name="interval_minutes"/>
+                            <field name="notify_email"
+                                   placeholder="alerts@my-company.be"/>
+                            <field name="active"/>
+                        </group>
+                        <group string="Status">
+                            <field name="is_up"/>
+                            <field name="last_status"/>
+                            <field name="last_error"/>
+                            <field name="response_ms"/>
+                            <field name="last_check"/>
+                            <field name="last_change"/>
+                            <field name="downtime_count"/>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_wa_monitor" model="ir.actions.act_window">
+        <field name="name">Uptime</field>
+        <field name="res_model">web.analytics.monitor</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Monitor your first URL</p>
+            <p>The cron checks each URL on its own interval and emails you
+               when it goes down or recovers.</p>
+        </field>
+    </record>
+
+    <record id="action_wa_goal" model="ir.actions.act_window">
+        <field name="name">Goals</field>
+        <field name="res_model">web.analytics.goal</field>
+        <field name="view_mode">list</field>
+    </record>
+
+    <record id="view_wa_goal_list" model="ir.ui.view">
+        <field name="name">web.analytics.goal.list</field>
+        <field name="model">web.analytics.goal</field>
+        <field name="arch" type="xml">
+            <list string="Goals" editable="bottom">
+                <field name="name"/>
+                <field name="site_id"/>
+                <field name="goal_type"/>
+                <field name="pattern"/>
+                <field name="conversions_30d"/>
+                <field name="conversion_rate"/>
+                <button name="action_view_conversions" type="object"
+                        icon="fa-filter" title="View conversions"/>
+            </list>
+        </field>
+    </record>
+
     <menuitem id="menu_wa_root" name="Analytics" sequence="91"/>
     <menuitem id="menu_wa_site" name="Websites" parent="menu_wa_root"
               action="action_wa_site" sequence="5"/>
@@ -175,5 +298,9 @@
               action="action_wa_traffic" sequence="10"/>
     <menuitem id="menu_wa_events" name="Events" parent="menu_wa_root"
               action="action_wa_events" sequence="15"/>
+    <menuitem id="menu_wa_goal" name="Goals" parent="menu_wa_root"
+              action="action_wa_goal" sequence="20"/>
+    <menuitem id="menu_wa_monitor" name="Uptime" parent="menu_wa_root"
+              action="action_wa_monitor" sequence="25"/>
 
 </odoo>

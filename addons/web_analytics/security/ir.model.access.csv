@@ -1,3 +1,5 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
 access_wa_site_user,web.analytics.site.user,model_web_analytics_site,base.group_user,1,1,1,1
 access_wa_event_user,web.analytics.event.user,model_web_analytics_event,base.group_user,1,0,0,1
+access_wa_goal_user,web.analytics.goal.user,model_web_analytics_goal,base.group_user,1,1,1,1
+access_wa_monitor_user,web.analytics.monitor.user,model_web_analytics_monitor,base.group_user,1,1,1,1

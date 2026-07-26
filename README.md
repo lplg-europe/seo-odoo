@@ -1,10 +1,14 @@
 # SEO Odoo
 
-An open-source SEO toolkit for Odoo, focused on analysis.
+An open-source **SEO & Analytics suite for Odoo** — the Semrush/Plausible
+alternative that lives inside your ERP.
 
-Most Odoo SEO modules focus on URL rewrites, schema or breadcrumbs. This
-project adds **SEO analysis** — on-page audit and crawl today, with Search
-Console, keywords and AI recommendations planned.
+Two independent modules:
+
+| Module | What it is |
+|---|---|
+| [`seo_suite`](addons/seo_suite) | Full SEO toolkit: crawl & audit, Search Console, GA4, keywords, backlinks, AI visibility, AI recommendations, client-ready PDF reports |
+| [`web_analytics`](addons/web_analytics) | Privacy-first, cookieless web analytics (Plausible-style): 1.5 KB snippet, no consent banner needed for basic analytics, acquisition channels incl. AI referrals, native Odoo dashboards |
 
 ## Features
 

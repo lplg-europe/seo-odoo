@@ -11,6 +11,9 @@ from ..analytics_lib import SESSION_WINDOW_MINUTES
 EVENT_TYPES = [
     ("pageview", "Pageview"),
     ("event", "Custom event"),
+    ("outbound", "Outbound click"),
+    ("error", "JS error"),
+    ("performance", "Web vitals"),
 ]
 
 
@@ -47,6 +50,20 @@ class WebAnalyticsEvent(models.Model):
     browser = fields.Char(string="Browser")
     os = fields.Char(string="OS")
     lang = fields.Char(string="Language", size=8)
+    country = fields.Char(
+        string="Country", size=2, index=True,
+        help="ISO country code (needs a GeoIP database configured on "
+             "the Odoo server; empty otherwise).")
+    lcp_ms = fields.Integer(
+        string="LCP (ms)", help="Largest Contentful Paint.")
+    fcp_ms = fields.Integer(
+        string="FCP (ms)", help="First Contentful Paint.")
+    ttfb_ms = fields.Integer(
+        string="TTFB (ms)", help="Time To First Byte.")
+    cls_milli = fields.Integer(
+        string="CLS (x1000)",
+        help="Cumulative Layout Shift multiplied by 1000 "
+             "(100 = CLS 0.1, the 'good' threshold).")
 
     @api.model
     def _ingest(self, site, values):

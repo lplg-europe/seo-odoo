@@ -14,17 +14,19 @@ from ..analytics_lib import (
     classify_channel, daily_salt, is_bot, parse_device, parse_utm,
     referrer_host, visitor_hash)
 
-# Kept deliberately tiny (~1.5 KB): auto pageviews (SPA-aware via history
-# patching), custom events via window.wa.event("name").
+# Kept deliberately tiny (~3 KB): auto pageviews (SPA-aware), custom
+# events, outbound-link clicks, JS errors, and native Web Vitals
+# (LCP / CLS / FCP / TTFB via PerformanceObserver — no library).
 SCRIPT_JS = r"""(function(){
 var s=document.currentScript;if(!s)return;
 var t=s.getAttribute("data-token")||"";
 var u=s.src.replace(/\/wa\/script\.js.*$/,"/wa/collect");
-function send(type,name){
+function send(type,name,extra){
  var p={token:t,type:type,name:name||"",host:location.hostname,
   path:location.pathname,title:document.title.slice(0,256),
   referrer:document.referrer||"",search:location.search||"",
   lang:(navigator.language||"").slice(0,8)};
+ if(extra)for(var k in extra)p[k]=extra[k];
  var b=JSON.stringify(p);
  try{if(!navigator.sendBeacon(u,new Blob([b],{type:"text/plain"})))throw 0;}
  catch(e){var x=new XMLHttpRequest();x.open("POST",u,true);x.send(b);}
@@ -37,6 +39,34 @@ var ps=history.pushState;history.pushState=function(){
 var rs=history.replaceState;history.replaceState=function(){
  rs.apply(this,arguments);pv();};
 addEventListener("popstate",pv);addEventListener("hashchange",pv);
+document.addEventListener("click",function(e){
+ var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;
+ if(a&&a.hostname&&a.hostname!==location.hostname&&/^https?:/.test(a.href))
+  send("outbound",a.href.slice(0,256));},true);
+var seen={};
+addEventListener("error",function(e){
+ var m=String((e&&e.message)||"Script error").slice(0,180);
+ if(!seen[m]){seen[m]=1;send("error",m);}});
+var vit={},vs=false;
+try{
+ var nav=performance.getEntriesByType("navigation")[0];
+ if(nav)vit.ttfb=Math.round(nav.responseStart);
+ new PerformanceObserver(function(l){var es=l.getEntries();
+  for(var i=0;i<es.length;i++)if(es[i].name==="first-contentful-paint")
+   vit.fcp=Math.round(es[i].startTime);
+ }).observe({type:"paint",buffered:true});
+ new PerformanceObserver(function(l){var es=l.getEntries();
+  if(es.length)vit.lcp=Math.round(es[es.length-1].startTime);
+ }).observe({type:"largest-contentful-paint",buffered:true});
+ var cls=0;
+ new PerformanceObserver(function(l){var es=l.getEntries();
+  for(var i=0;i<es.length;i++)if(!es[i].hadRecentInput)cls+=es[i].value;
+  vit.cls=Math.round(cls*1000);
+ }).observe({type:"layout-shift",buffered:true});
+}catch(e){}
+document.addEventListener("visibilitychange",function(){
+ if(document.visibilityState==="hidden"&&!vs&&(vit.lcp||vit.fcp||vit.ttfb)){
+  vs=true;send("performance","",{m:vit});}});
 window.wa={event:function(n){send("event",String(n||"").slice(0,64))}};
 pv();
 })();"""
@@ -91,13 +121,20 @@ class WebAnalyticsController(http.Controller):
             secret, fields.Date.to_string(fields.Date.today()))
         ip = request.httprequest.remote_addr or ""
 
-        event_type = ("event" if payload.get("type") == "event"
-                      else "pageview")
+        requested_type = payload.get("type")
+        event_type = (requested_type if requested_type in (
+            "event", "outbound", "error", "performance") else "pageview")
         utm = parse_utm(payload.get("search"))
         ref_host = referrer_host(payload.get("referrer"), host)
+        country = ""
+        try:
+            country = (request.geoip.country_code or "")[:2]
+        except Exception:  # noqa: BLE001 — no GeoIP database configured
+            pass
         values = {
             "event_type": event_type,
-            "event_name": (payload.get("name") or "")[:64],
+            "event_name": (payload.get("name") or "")[:256],
+            "country": country,
             "path": (payload.get("path") or "/")[:512],
             "page_title": (payload.get("title") or "")[:256],
             "referrer_host": ref_host[:128],
@@ -113,5 +150,16 @@ class WebAnalyticsController(http.Controller):
         device, browser, os_name = parse_device(user_agent)
         values.update({
             "device_type": device, "browser": browser, "os": os_name})
+        metrics = payload.get("m") or {}
+        if event_type == "performance" and isinstance(metrics, dict):
+            def as_ms(key):
+                try:
+                    return max(0, min(120000, int(metrics.get(key) or 0)))
+                except (TypeError, ValueError):
+                    return 0
+            values.update({
+                "lcp_ms": as_ms("lcp"), "fcp_ms": as_ms("fcp"),
+                "ttfb_ms": as_ms("ttfb"), "cls_milli": as_ms("cls"),
+            })
         request.env["web.analytics.event"].sudo()._ingest(site, values)
         return request.make_response("", status=204)

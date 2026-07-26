@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     "name": "Web Analytics",
-    "version": "19.0.1.0.0",
+    "version": "19.0.2.0.0",
     "summary": "Privacy-first, cookieless web analytics inside Odoo "
                "(Plausible-style).",
     "description": """
@@ -16,8 +16,16 @@ no consent banner needed for basic analytics, no Google.
 - Sessions (30-minute sliding window), pageviews, custom events
 - Acquisition channels: Direct, Organic Search, Organic Social, AI
   (ChatGPT/Claude/Perplexity referrals), Email, Paid, Referral
-- UTM campaign tracking, devices / browsers / OS / languages
-- Live visitors, today / 30-day stats, native Odoo graph & pivot views
+- UTM campaign tracking, devices / browsers / OS / languages / countries
+  (via the server's GeoIP database when configured)
+- Live visitors, bounce rate, session duration, today / 30-day stats
+- Web Vitals (LCP / CLS / FCP / TTFB) measured natively, LCP p75
+- Outbound-click tracking and JS error tracking
+- Conversion goals (page visited, custom event, outbound click) with
+  session-based conversion rates
+- Uptime monitoring: periodic HTTP checks with email alerts on
+  down / recovery
+- Native Odoo graph & pivot dashboards
 
 Companion of the SEO Suite module (same repository), installable
 independently.
@@ -26,10 +34,11 @@ independently.
     "author": "LPLG",
     "website": "https://lplg.eu",
     "license": "LGPL-3",
-    "depends": ["base", "web"],
+    "depends": ["base", "web", "mail"],
     "data": [
         "security/ir.model.access.csv",
         "views/wa_views.xml",
+        "data/ir_cron.xml",
     ],
     "installable": True,
     "application": True,
