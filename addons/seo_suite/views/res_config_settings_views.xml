@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="res_config_settings_view_form_seo" model="ir.ui.view">
+        <field name="name">res.config.settings.view.form.inherit.seo.suite</field>
+        <field name="model">res.config.settings</field>
+        <field name="inherit_id" ref="base_setup.res_config_settings_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//form" position="inside">
+                <app data-string="SEO Suite" string="SEO Suite" name="seo_suite"
+                     logo="/seo_suite/static/description/icon.png">
+                    <block title="Integrations" name="seo_suite_integrations">
+                        <setting string="PageSpeed Insights"
+                                 help="Optional free Google API key — raises the PageSpeed quota (anonymous quota is a few calls per day).">
+                            <field name="seo_pagespeed_api_key" password="True"/>
+                        </setting>
+                        <setting string="Search Console &amp; Analytics"
+                                 help="Paste the full JSON key of a Google Cloud service account (Search Console API + Analytics Data API enabled), then add its email to your Search Console property and GA4 property. See the field tooltip for the 3 steps.">
+                            <field name="seo_google_service_account" password="True"/>
+                        </setting>
+                    </block>
+                </app>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="action_seo_config_settings" model="ir.actions.act_window">
+        <field name="name">Settings</field>
+        <field name="res_model">res.config.settings</field>
+        <field name="view_mode">form</field>
+        <field name="target">current</field>
+        <field name="context">{'module': 'seo_suite'}</field>
+    </record>
+
+    <menuitem id="menu_seo_config" name="Configuration"
+              parent="menu_seo_root" action="action_seo_config_settings"
+              sequence="90"/>
+
+</odoo>

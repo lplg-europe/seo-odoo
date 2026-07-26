@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     "name": "SEO Suite",
-    "version": "19.0.1.3.0",
+    "version": "19.0.1.5.0",
     "summary": "SEO suite for Odoo: on-page, technical and content audit.",
     "description": """
 SEO Suite
@@ -33,18 +33,27 @@ Actionable output:
 - Printable SEO Audit Report (PDF): score, action plan by work stream,
   site-level issues, page detail — ready to hand to a client
 
-Coming next: Google Search Console, keyword research, AI recommendations.
+Integrations:
+- Google PageSpeed Insights / Core Web Vitals per page (free BYO API key)
+- Broken internal links checker (HEAD pass over discovered URLs)
+- Google Search Console (BYO service account): clicks, impressions, CTR,
+  position per page + top search queries + URL Inspection (real
+  indexation status of every page)
+- Google Analytics 4: views, sessions, users, engagement per page
+
+Coming next: keyword research, AI recommendations, scheduled crawls.
 """,
     "category": "Website/SEO",
     "author": "LPLG",
     "website": "https://lplg.eu",
     "license": "LGPL-3",
-    "depends": ["base", "web"],
+    "depends": ["base", "base_setup", "web"],
     "data": [
         "security/ir.model.access.csv",
         "views/seo_audit_views.xml",
         "views/seo_site_views.xml",
         "views/seo_issue_views.xml",
+        "views/res_config_settings_views.xml",
         "report/seo_site_report.xml",
     ],
     "images": ["static/description/icon.png"],

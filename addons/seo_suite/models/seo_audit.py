@@ -3,7 +3,7 @@
 from odoo import api, fields, models
 from odoo.exceptions import UserError
 
-from ..crawler import fetch_page
+from ..crawler import fetch_page, pagespeed
 
 
 class SeoAudit(models.Model):
@@ -61,6 +61,43 @@ class SeoAudit(models.Model):
     link_score = fields.Integer(
         string="Link score", readonly=True,
         help="Internal PageRank of the page within the crawl (1-100).")
+    psi_date = fields.Datetime(string="PageSpeed run on", readonly=True)
+    psi_perf_mobile = fields.Integer(string="Perf (mobile)", readonly=True)
+    psi_seo_mobile = fields.Integer(string="SEO (mobile)", readonly=True)
+    psi_a11y_mobile = fields.Integer(
+        string="Accessibility (mobile)", readonly=True)
+    psi_bp_mobile = fields.Integer(
+        string="Best practices (mobile)", readonly=True)
+    psi_perf_desktop = fields.Integer(string="Perf (desktop)", readonly=True)
+    psi_seo_desktop = fields.Integer(string="SEO (desktop)", readonly=True)
+    psi_a11y_desktop = fields.Integer(
+        string="Accessibility (desktop)", readonly=True)
+    psi_bp_desktop = fields.Integer(
+        string="Best practices (desktop)", readonly=True)
+    psi_lcp = fields.Char(string="LCP (mobile)", readonly=True)
+    psi_cls = fields.Char(string="CLS (mobile)", readonly=True)
+    psi_tbt = fields.Char(string="TBT (mobile)", readonly=True)
+    gsc_clicks = fields.Integer(string="Clicks (28d)", readonly=True)
+    gsc_impressions = fields.Integer(string="Impressions (28d)", readonly=True)
+    gsc_ctr = fields.Float(string="CTR (%)", digits=(6, 2), readonly=True)
+    gsc_position = fields.Float(
+        string="Avg position", digits=(6, 1), readonly=True)
+    index_verdict = fields.Char(
+        string="Index verdict", readonly=True,
+        help="Google URL Inspection verdict: PASS = indexable, "
+             "NEUTRAL = excluded, FAIL = error.")
+    index_state = fields.Char(
+        string="Coverage", readonly=True,
+        help='Google coverage state, e.g. "Submitted and indexed".')
+    google_canonical = fields.Char(
+        string="Google canonical", readonly=True)
+    google_last_crawl = fields.Char(
+        string="Last Google crawl", readonly=True)
+    ga_views = fields.Integer(string="Views (28d)", readonly=True)
+    ga_sessions = fields.Integer(string="Sessions (28d)", readonly=True)
+    ga_users = fields.Integer(string="Users (28d)", readonly=True)
+    ga_engagement = fields.Float(
+        string="Engagement (%)", digits=(6, 1), readonly=True)
     issues = fields.Text(string="Detected issues", readonly=True)
     issue_count = fields.Integer(string="Issue count", readonly=True)
     issue_ids = fields.One2many(
@@ -72,6 +109,37 @@ class SeoAudit(models.Model):
     def action_run_audit(self):
         for rec in self:
             rec._run_audit()
+        return True
+
+    def action_run_pagespeed(self):
+        """Query Google PageSpeed Insights (mobile + desktop) for this URL."""
+        self.ensure_one()
+        url = (self.final_url or self.name or "").strip()
+        if not url:
+            raise UserError("Run the audit first (or enter a URL).")
+        api_key = self.env["ir.config_parameter"].sudo().get_param(
+            "seo_suite.pagespeed_api_key") or None
+        mobile = pagespeed(url, api_key=api_key, strategy="mobile")
+        if mobile["error"]:
+            raise UserError(
+                "PageSpeed failed: %s\n\nTip: add a free Google API key in "
+                "SEO → Configuration → Settings to raise the quota."
+                % mobile["error"])
+        desktop = pagespeed(url, api_key=api_key, strategy="desktop")
+        self.write({
+            "psi_date": fields.Datetime.now(),
+            "psi_perf_mobile": mobile["performance"],
+            "psi_seo_mobile": mobile["seo"],
+            "psi_a11y_mobile": mobile["accessibility"],
+            "psi_bp_mobile": mobile["best_practices"],
+            "psi_lcp": mobile["lcp"],
+            "psi_cls": mobile["cls"],
+            "psi_tbt": mobile["tbt"],
+            "psi_perf_desktop": desktop["performance"],
+            "psi_seo_desktop": desktop["seo"],
+            "psi_a11y_desktop": desktop["accessibility"],
+            "psi_bp_desktop": desktop["best_practices"],
+        })
         return True
 
     def _run_audit(self):

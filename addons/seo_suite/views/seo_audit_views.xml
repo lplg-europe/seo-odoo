@@ -29,6 +29,9 @@
                     <button name="action_run_audit" type="object"
                             string="Run audit" class="btn-primary"
                             icon="fa-search"/>
+                    <button name="action_run_pagespeed" type="object"
+                            string="Run PageSpeed" icon="fa-tachometer"
+                            help="Google PageSpeed Insights (mobile + desktop). Takes ~30-60s."/>
                 </header>
                 <sheet>
                     <div class="oe_title">
@@ -85,6 +88,42 @@
                         <field name="canonical"/>
                         <field name="meta_robots"/>
                         <field name="top_keywords"/>
+                    </group>
+                    <group string="Google Search Console &amp; Analytics"
+                           invisible="not gsc_impressions and not index_state and not ga_views">
+                        <group>
+                            <field name="gsc_clicks"/>
+                            <field name="gsc_impressions"/>
+                            <field name="gsc_ctr"/>
+                            <field name="gsc_position"/>
+                            <field name="ga_views"/>
+                            <field name="ga_sessions"/>
+                            <field name="ga_users"/>
+                            <field name="ga_engagement"/>
+                        </group>
+                        <group>
+                            <field name="index_verdict"/>
+                            <field name="index_state"/>
+                            <field name="google_canonical"/>
+                            <field name="google_last_crawl"/>
+                        </group>
+                    </group>
+                    <group string="PageSpeed Insights (Google)"
+                           invisible="not psi_date">
+                        <group>
+                            <field name="psi_date"/>
+                            <field name="psi_perf_mobile"/>
+                            <field name="psi_seo_mobile"/>
+                            <field name="psi_a11y_mobile"/>
+                            <field name="psi_bp_mobile"/>
+                        </group>
+                        <group>
+                            <field name="psi_lcp"/>
+                            <field name="psi_cls"/>
+                            <field name="psi_tbt"/>
+                            <field name="psi_perf_desktop"/>
+                            <field name="psi_seo_desktop"/>
+                        </group>
                     </group>
                     <group string="Detected issues">
                         <field name="issue_ids" nolabel="1" readonly="1">

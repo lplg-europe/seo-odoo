@@ -28,6 +28,14 @@
                     <button name="action_crawl" type="object"
                             string="Crawl site" class="btn-primary"
                             icon="fa-globe"/>
+                    <button name="action_sync_google" type="object"
+                            string="Sync Google data" icon="fa-google"
+                            invisible="page_count == 0"
+                            help="Pull clicks/impressions/position from Search Console (and GA4 traffic if configured) for every crawled page."/>
+                    <button name="action_check_indexation" type="object"
+                            string="Check indexation" icon="fa-check-square-o"
+                            invisible="page_count == 0"
+                            help="Google URL Inspection per page: is it really indexed? Takes ~1-2s per page (max 50)."/>
                 </header>
                 <sheet>
                     <div class="oe_button_box" name="button_box">
@@ -59,6 +67,11 @@
                             <field name="max_pages"/>
                             <field name="use_sitemap"/>
                             <field name="follow_links"/>
+                            <field name="check_links"/>
+                            <field name="gsc_property"
+                                   placeholder="auto-detected on first sync"/>
+                            <field name="ga4_property_id"
+                                   placeholder="e.g. 123456789"/>
                         </group>
                         <group string="Result">
                             <field name="last_crawl"/>
@@ -70,6 +83,16 @@
                             <field name="info_count"/>
                             <field name="avg_response_time"/>
                             <field name="avg_word_count"/>
+                            <field name="checked_link_count"
+                                   invisible="not checked_link_count"/>
+                            <field name="broken_link_count"
+                                   invisible="not checked_link_count"/>
+                            <field name="google_last_sync"
+                                   invisible="not google_last_sync"/>
+                            <field name="indexed_page_count"
+                                   invisible="not google_last_sync and not indexed_page_count"/>
+                            <field name="not_indexed_page_count"
+                                   invisible="not google_last_sync and not indexed_page_count"/>
                         </group>
                     </group>
                     <notebook>
@@ -84,6 +107,10 @@
                                     <field name="issue_count"/>
                                     <field name="score" widget="progressbar"/>
                                     <field name="link_score" optional="show"/>
+                                    <field name="gsc_clicks" optional="show"/>
+                                    <field name="gsc_position" optional="show"/>
+                                    <field name="ga_views" optional="hide"/>
+                                    <field name="index_verdict" optional="show"/>
                                     <field name="response_time" optional="hide"/>
                                     <field name="page_size_kb" optional="hide"/>
                                     <field name="flesch_score" optional="hide"/>
@@ -95,6 +122,11 @@
                         <page string="Site issues" name="site_issues">
                             <field name="site_issue_count" invisible="1"/>
                             <field name="site_issues" nolabel="1"/>
+                        </page>
+                        <page string="Search queries" name="search_queries"
+                              invisible="not google_last_sync">
+                            <field name="gsc_top_queries" nolabel="1"
+                                   class="o_field_text font-monospace"/>
                         </page>
                     </notebook>
                 </sheet>

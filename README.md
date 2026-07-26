@@ -19,16 +19,20 @@ Console, keywords and AI recommendations planned.
 | Performance & security | ✅ | Response time, page size, redirect chains, HTTPS, mixed content, unsafe `target=_blank` |
 | Content quality | ✅ | Readability (Flesch), text/HTML ratio, top keywords (FR/EN stop-words) |
 | Link score | ✅ | Internal PageRank (damping 0.85) across crawled pages, normalized 1-100 |
+| PageSpeed Insights | ✅ | Per-page Core Web Vitals + Lighthouse scores, mobile & desktop (free BYO Google key, SEO → Configuration) |
+| Broken links | ✅ | Optional HEAD pass over discovered-but-not-crawled URLs, with referring pages |
+| Search Console | ✅ | BYO service account: clicks/impressions/CTR/position per page, top queries, and **URL Inspection** (real indexation status of every page) |
+| Google Analytics 4 | ✅ | Views, sessions, users, engagement per page (28 days) |
 
 The crawl engine ([crawler.py](addons/seo_suite/crawler.py)) is pure Python
 stdlib with **no Odoo dependency** — it can be reused standalone (scripts, CI,
 other projects) or swapped into another frontend.
 
+The crawl engine stays dependency-free; Google integrations sign their
+service-account JWT with `cryptography`, which ships with standard Odoo.
+
 ### Roadmap
 - Scheduled crawls (cron) + history / score trend
-- PageSpeed Insights / Core Web Vitals (BYO Google API key)
-- Broken-links checker (all discovered links, not only crawled pages)
-- Google Search Console integration (positions, striking-distance)
 - Keyword research (BYO DataForSEO key, premium)
 - AI recommendations (Claude / Gemini)
 - Odoo Website helpers: sitemap, robots, schema, redirects

@@ -14,7 +14,7 @@ import urllib.request
 import urllib.robotparser
 import xml.etree.ElementTree as ET
 from html.parser import HTMLParser
-from urllib.parse import urldefrag, urljoin, urlsplit
+from urllib.parse import urldefrag, urlencode, urljoin, urlsplit
 
 USER_AGENT = "SEO-Suite-Bot/0.2"
 THIN_CONTENT_WORDS = 300
@@ -30,6 +30,9 @@ REDIRECT_CHAIN_MIN = 2  # warning at this many redirect hops
 TOP_KEYWORDS = 10
 PAGERANK_DAMPING = 0.85
 PAGERANK_ITERATIONS = 10
+MAX_LINK_CHECKS = 200  # cap on HEAD requests for the broken-links pass
+MAX_REFERRERS = 3  # referring pages remembered per discovered URL
+PSI_ENDPOINT = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed"
 
 # Issue severities and their score penalty (score = 100 - sum of penalties).
 SEVERITY_WEIGHT = {"critical": 25, "warning": 10, "info": 5}
@@ -542,6 +545,78 @@ def fetch_page(url, timeout=15):
     return page
 
 
+def check_url(url, timeout=10):
+    """Lightweight availability check: HEAD, falling back to GET on 405.
+
+    Returns (status, error) without downloading the body.
+    """
+    for method in ("HEAD", "GET"):
+        req = urllib.request.Request(
+            url, method=method, headers={"User-Agent": USER_AGENT})
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return resp.status, ""
+        except urllib.error.HTTPError as e:
+            if e.code == 405 and method == "HEAD":
+                continue
+            return e.code, ""
+        except urllib.error.URLError as e:
+            return 0, str(e.reason)
+        except Exception as e:  # noqa: BLE001
+            return 0, str(e)
+    return 0, "unreachable"
+
+
+def pagespeed(url, api_key=None, strategy="mobile", timeout=90):
+    """Google PageSpeed Insights v5 scores for one URL.
+
+    Returns {"performance", "accessibility", "best_practices", "seo" (0-100),
+    "lcp", "cls", "tbt" (display strings), "error"}. Works without an API key
+    for occasional calls; a (free) key raises the quota.
+    """
+    result = {"performance": 0, "accessibility": 0, "best_practices": 0,
+              "seo": 0, "lcp": "", "cls": "", "tbt": "", "error": ""}
+    params = [("url", url), ("strategy", strategy)]
+    params += [("category", c) for c in
+               ("performance", "accessibility", "best-practices", "seo")]
+    if api_key:
+        params.append(("key", api_key))
+    req = urllib.request.Request(
+        PSI_ENDPOINT + "?" + urlencode(params),
+        headers={"User-Agent": USER_AGENT})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        detail = ""
+        try:
+            detail = json.loads(e.read().decode("utf-8"))[
+                "error"]["message"][:200]
+        except Exception:  # noqa: BLE001
+            pass
+        result["error"] = "PageSpeed API HTTP %d%s" % (
+            e.code, ": %s" % detail if detail else "")
+        return result
+    except Exception as e:  # noqa: BLE001
+        result["error"] = str(e)
+        return result
+
+    lighthouse = data.get("lighthouseResult") or {}
+    categories = lighthouse.get("categories") or {}
+    for key, api_key_name in (("performance", "performance"),
+                              ("accessibility", "accessibility"),
+                              ("best_practices", "best-practices"),
+                              ("seo", "seo")):
+        score = (categories.get(api_key_name) or {}).get("score")
+        result[key] = round(score * 100) if score is not None else 0
+    audits = lighthouse.get("audits") or {}
+    for key, audit_name in (("lcp", "largest-contentful-paint"),
+                            ("cls", "cumulative-layout-shift"),
+                            ("tbt", "total-blocking-time")):
+        result[key] = (audits.get(audit_name) or {}).get("displayValue") or ""
+    return result
+
+
 def compute_link_scores(pages, site_netloc=None):
     """Internal PageRank over the crawled pages, normalized 1-100.
 
@@ -629,11 +704,17 @@ def discover_sitemap_urls(origin, robots_sitemaps=None, timeout=10):
 
 
 def crawl(root_url, max_pages=30, use_sitemap=True, follow_links=True,
-          delay=DEFAULT_DELAY, timeout=15):
+          check_links=False, delay=DEFAULT_DELAY, timeout=15):
     """Crawl a site starting at root_url.
 
     Returns {"pages": [page dicts], "discovered": int, "disallowed": int,
-    "sitemap_urls": int, "site_netloc": str}.
+    "sitemap_urls": int, "site_netloc": str, "favicon_ok": bool,
+    "broken_links": [{"url", "status", "sources"}], "checked_links": int,
+    "referrers": {url: [referring page urls]}}.
+
+    With check_links=True, URLs discovered but not crawled (over max_pages)
+    get a lightweight HEAD check so broken internal links surface even
+    beyond the crawl budget (capped at MAX_LINK_CHECKS).
     """
     root_url = (root_url or "").strip()
     if not root_url.startswith(("http://", "https://")):
@@ -647,19 +728,28 @@ def crawl(root_url, max_pages=30, use_sitemap=True, follow_links=True,
     site_netloc = base.netloc
     origin = "%s://%s" % (base.scheme or "https", base.netloc)
     seen = {root_url, root_page["final_url"]}
+    referrers = {}
 
     if root_page["error"] and not root_page["status"]:
         return {"pages": pages, "discovered": 1, "disallowed": 0,
-                "sitemap_urls": 0, "site_netloc": site_netloc}
+                "sitemap_urls": 0, "site_netloc": site_netloc,
+                "favicon_ok": True, "broken_links": [], "checked_links": 0,
+                "referrers": referrers}
 
     rp, robots_sitemaps = load_robots(origin)
 
     queue = []
 
-    def enqueue(base_url, hrefs, source):
+    def enqueue(base_url, hrefs, source, referrer=None):
         for href in hrefs:
             normalized = normalize_link(base_url, href, site_netloc)
-            if normalized and normalized not in seen:
+            if not normalized:
+                continue
+            refs = referrers.setdefault(normalized, [])
+            ref = referrer or base_url
+            if ref not in refs and len(refs) < MAX_REFERRERS:
+                refs.append(ref)
+            if normalized not in seen:
                 seen.add(normalized)
                 queue.append((normalized, source))
 
@@ -667,7 +757,7 @@ def crawl(root_url, max_pages=30, use_sitemap=True, follow_links=True,
     if use_sitemap:
         sitemap_urls = discover_sitemap_urls(origin, robots_sitemaps)
         sitemap_count = len(sitemap_urls)
-        enqueue(origin + "/", sitemap_urls, "sitemap")
+        enqueue(origin + "/", sitemap_urls, "sitemap", referrer="sitemap.xml")
     if follow_links:
         enqueue(root_page["final_url"], root_page["links"], "link")
 
@@ -692,6 +782,26 @@ def crawl(root_url, max_pages=30, use_sitemap=True, follow_links=True,
     if not favicon_ok:
         favicon_ok = fetch(origin + "/favicon.ico", timeout=10)["status"] == 200
 
+    # Broken-links pass over the URLs discovered but not crawled.
+    broken_links = []
+    checked = 0
+    if check_links:
+        remaining = [url for url, _ in queue[:MAX_LINK_CHECKS]]
+        for url in remaining:
+            if rp and not rp.can_fetch(USER_AGENT, url):
+                continue
+            if delay:
+                time.sleep(delay / 3)
+            status, error = check_url(url, timeout=10)
+            checked += 1
+            if error or status >= 400:
+                broken_links.append({
+                    "url": url,
+                    "status": status,
+                    "error": error,
+                    "sources": referrers.get(url, []),
+                })
+
     return {
         "pages": pages,
         "discovered": len(seen),
@@ -699,21 +809,36 @@ def crawl(root_url, max_pages=30, use_sitemap=True, follow_links=True,
         "sitemap_urls": sitemap_count,
         "site_netloc": site_netloc,
         "favicon_ok": favicon_ok,
+        "broken_links": broken_links,
+        "checked_links": checked,
+        "referrers": referrers,
     }
 
 
-def analyze_site(pages, favicon_ok=True):
+def analyze_site(pages, favicon_ok=True, broken_links=None, referrers=None):
     """Cross-page issues over a crawl result (list of strings)."""
     issues = []
+    referrers = referrers or {}
     ok = [p for p in pages
           if p["is_html"] and not p["error"] and 0 < p["status"] < 400]
     if not favicon_ok:
         issues.append("No favicon found (no <link rel=icon> and no /favicon.ico)")
 
+    def linked_from(url):
+        refs = [r for r in referrers.get(url, []) if r != url]
+        return " — linked from: %s" % ", ".join(refs) if refs else ""
+
     errors = [p for p in pages if p["error"] or p["status"] >= 400]
     for p in errors:
         label = ("HTTP %d" % p["status"]) if p["status"] else p["error"]
-        issues.append("Page in error: %s (%s)" % (p["url"], label))
+        issues.append("Page in error: %s (%s)%s"
+                      % (p["url"], label, linked_from(p["url"])))
+
+    for link in broken_links or []:
+        label = ("HTTP %d" % link["status"]) if link["status"] \
+            else link.get("error", "unreachable")
+        issues.append("Broken internal link: %s (%s)%s"
+                      % (link["url"], label, linked_from(link["url"])))
 
     by_title = {}
     for p in ok:
