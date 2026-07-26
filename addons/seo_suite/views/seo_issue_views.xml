@@ -33,16 +33,15 @@
                         domain="[('severity', '=', 'warning')]"/>
                 <filter name="filter_info" string="Info"
                         domain="[('severity', '=', 'info')]"/>
-                <group expand="0" string="Group By">
-                    <filter name="group_category" string="Category"
-                            context="{'group_by': 'category'}"/>
-                    <filter name="group_severity" string="Severity"
-                            context="{'group_by': 'severity'}"/>
-                    <filter name="group_site" string="Site"
-                            context="{'group_by': 'site_id'}"/>
-                    <filter name="group_url" string="Page"
-                            context="{'group_by': 'audit_id'}"/>
-                </group>
+                <separator/>
+                <filter name="group_category" string="Category"
+                        context="{'group_by': 'category'}"/>
+                <filter name="group_severity" string="Severity"
+                        context="{'group_by': 'severity'}"/>
+                <filter name="group_site" string="Site"
+                        context="{'group_by': 'site_id'}"/>
+                <filter name="group_url" string="Page"
+                        context="{'group_by': 'audit_id'}"/>
             </search>
         </field>
     </record>
