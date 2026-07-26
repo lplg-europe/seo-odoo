@@ -68,6 +68,8 @@
                             <field name="critical_count"/>
                             <field name="warning_count"/>
                             <field name="info_count"/>
+                            <field name="avg_response_time"/>
+                            <field name="avg_word_count"/>
                         </group>
                     </group>
                     <notebook>
@@ -81,6 +83,11 @@
                                     <field name="word_count" optional="show"/>
                                     <field name="issue_count"/>
                                     <field name="score" widget="progressbar"/>
+                                    <field name="link_score" optional="show"/>
+                                    <field name="response_time" optional="hide"/>
+                                    <field name="page_size_kb" optional="hide"/>
+                                    <field name="flesch_score" optional="hide"/>
+                                    <field name="og_status" optional="hide"/>
                                     <field name="error" optional="hide"/>
                                 </list>
                             </field>

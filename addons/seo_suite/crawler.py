@@ -6,6 +6,8 @@
 - analyze_site(pages)  cross-page issues (duplicates, errors, noindex)
 """
 import gzip
+import json
+import re
 import time
 import urllib.error
 import urllib.request
@@ -14,19 +16,43 @@ import xml.etree.ElementTree as ET
 from html.parser import HTMLParser
 from urllib.parse import urldefrag, urljoin, urlsplit
 
-USER_AGENT = "SEO-Suite-Bot/0.1"
-THIN_CONTENT_WORDS = 200
+USER_AGENT = "SEO-Suite-Bot/0.2"
+THIN_CONTENT_WORDS = 300
 TITLE_MIN, TITLE_MAX = 20, 60
 META_DESC_MAX = 160
 MAX_BYTES = 3_000_000
+MAX_TEXT_CHARS = 500_000  # cap on text kept for readability/keywords
 DEFAULT_DELAY = 0.25  # polite pause between requests (seconds)
 MAX_SITEMAP_URLS = 500
+SLOW_RESPONSE_S = 1.0  # info issue above this response time
+LOW_TEXT_RATIO = 10  # info issue below this text/HTML percentage
+REDIRECT_CHAIN_MIN = 2  # warning at this many redirect hops
+TOP_KEYWORDS = 10
+PAGERANK_DAMPING = 0.85
+PAGERANK_ITERATIONS = 10
 
 # Issue severities and their score penalty (score = 100 - sum of penalties).
 SEVERITY_WEIGHT = {"critical": 25, "warning": 10, "info": 5}
 # Issue categories — stable keys shared with the Odoo models.
 CATEGORIES = ("title", "meta", "headings", "content", "images", "links",
-              "technical")
+              "social", "performance", "security", "technical")
+
+# Compact stop-word lists for keyword extraction (site content is often
+# French or English — both are always applied).
+STOPWORDS = frozenset("""
+le la les un une des du de d l au aux et ou où mais donc or ni car que qui
+quoi dont ne pas plus moins très peu tout tous toute toutes ce cet cette ces
+son sa ses leur leurs mon ma mes ton ta tes notre votre nos vos je tu il elle
+on nous vous ils elles se sur sous dans par pour avec sans chez vers entre
+est sont était être avoir fait faire comme aussi bien encore déjà ici là
+the a an and or but if then else when at by for with about against between
+into through during before after above below to from up down in out on off
+over under again further once here there all any both each few more most
+other some such no nor not only own same so than too very can will just
+should now is are was were be been being have has had do does did of it its
+this that these those you your yours he she they them their what which who
+whom
+""".split())
 
 # Never enqueue obvious non-page resources.
 SKIP_EXTENSIONS = (
@@ -50,44 +76,96 @@ class SeoPageParser(HTMLParser):
         self.h1 = []
         self._in_h1 = False
         self._h1_buf = ""
+        self.h2_count = 0
         self.images = 0
         self.images_without_alt = 0
         self.links = []  # raw href values of <a> tags
         self.word_count = 0
+        self.lang = ""
+        self.viewport = False
+        self.has_favicon_link = False
+        self.og = {}  # og:title / og:description / og:image -> content
+        self.hreflangs = []  # hreflang codes of link rel=alternate
+        self.ldjson = []  # raw contents of application/ld+json scripts
+        self._in_ldjson = False
+        self._ldjson_buf = ""
+        self.resource_urls = []  # src/href of img, script, stylesheet, media
+        self.unsafe_blank_links = 0  # target=_blank without noopener/noreferrer
+        self.text_parts = []  # visible text, capped at MAX_TEXT_CHARS
+        self._text_len = 0
         self._skip = 0
 
     def handle_starttag(self, tag, attrs):
         a = dict(attrs)
+        if tag == "script":
+            stype = (a.get("type") or "").lower()
+            if "ld+json" in stype:
+                self._in_ldjson = True
+                self._ldjson_buf = ""
+            if a.get("src"):
+                self.resource_urls.append(a["src"])
         if tag in ("script", "style", "noscript", "svg"):
             self._skip += 1
             return
-        if tag == "title":
+        if tag == "html":
+            self.lang = (a.get("lang") or "").strip()
+        elif tag == "title":
             self._in_title = True
         elif tag == "meta":
             name = (a.get("name") or "").lower()
+            prop = (a.get("property") or "").lower()
             if name == "description":
                 self.meta_description = a.get("content")
             elif name == "robots":
                 self.meta_robots = a.get("content")
-        elif tag == "link" and (a.get("rel") or "").lower() == "canonical":
-            self.canonical = a.get("href")
+            elif name == "viewport":
+                self.viewport = True
+            elif prop in ("og:title", "og:description", "og:image"):
+                self.og[prop] = (a.get("content") or "").strip()
+        elif tag == "link":
+            rel = (a.get("rel") or "").lower()
+            href = a.get("href")
+            if rel == "canonical":
+                self.canonical = href
+            elif "icon" in rel:
+                self.has_favicon_link = True
+            elif rel == "alternate" and a.get("hreflang"):
+                self.hreflangs.append(a["hreflang"].strip())
+            elif rel == "stylesheet" and href:
+                self.resource_urls.append(href)
         elif tag == "h1":
             self._in_h1 = True
             self._h1_buf = ""
-        elif tag == "a" and a.get("href"):
-            href = a["href"].strip()
+        elif tag == "h2":
+            self.h2_count += 1
+        elif tag == "a":
+            href = (a.get("href") or "").strip()
             if href and not href.startswith(("#", "mailto:", "tel:", "javascript:")):
                 self.links.append(href)
+            if (a.get("target") or "").lower() == "_blank":
+                rel = (a.get("rel") or "").lower()
+                if "noopener" not in rel and "noreferrer" not in rel:
+                    self.unsafe_blank_links += 1
         elif tag == "img":
             self.images += 1
             if not a.get("alt"):
                 self.images_without_alt += 1
+            src = a.get("src") or a.get("data-src")
+            if src:
+                self.resource_urls.append(src)
+        elif tag in ("iframe", "audio", "video", "source", "embed"):
+            if a.get("src"):
+                self.resource_urls.append(a["src"])
 
     def handle_startendtag(self, tag, attrs):
         self.handle_starttag(tag, attrs)
 
     def handle_endtag(self, tag):
         if tag in ("script", "style", "noscript", "svg"):
+            if tag == "script" and self._in_ldjson:
+                self._in_ldjson = False
+                if self._ldjson_buf.strip():
+                    self.ldjson.append(self._ldjson_buf)
             if self._skip:
                 self._skip -= 1
             return
@@ -100,6 +178,8 @@ class SeoPageParser(HTMLParser):
                 self.h1.append(text)
 
     def handle_data(self, data):
+        if self._in_ldjson:
+            self._ldjson_buf += data
         if self._skip:
             return
         if self._in_title:
@@ -109,27 +189,43 @@ class SeoPageParser(HTMLParser):
         stripped = data.strip()
         if stripped:
             self.word_count += len(stripped.split())
+            if self._text_len < MAX_TEXT_CHARS:
+                self.text_parts.append(stripped)
+                self._text_len += len(stripped) + 1
 
 
 def fetch(url, timeout=15):
-    """GET a URL. Returns {status, final_url, body, content_type, is_html, error}."""
+    """GET a URL. Returns {status, final_url, body, content_type, is_html,
+    error, response_time, page_size_kb, redirect_count}."""
     result = {
         "status": 0, "final_url": url, "body": "",
         "content_type": "", "is_html": False, "error": "",
+        "response_time": 0.0, "page_size_kb": 0, "redirect_count": 0,
     }
+    redirects = {"count": 0}
+
+    class _CountingRedirectHandler(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            redirects["count"] += 1
+            return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+    opener = urllib.request.build_opener(_CountingRedirectHandler)
     req = urllib.request.Request(
         url, headers={"User-Agent": USER_AGENT, "Accept-Encoding": "gzip"}
     )
+    started = time.monotonic()
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with opener.open(req, timeout=timeout) as resp:
             result["status"] = resp.status
             result["final_url"] = resp.geturl()
             raw = resp.read(MAX_BYTES)
+            result["response_time"] = time.monotonic() - started
             if resp.headers.get("Content-Encoding") == "gzip":
                 try:
                     raw = gzip.decompress(raw)
                 except OSError:
                     pass
+            result["page_size_kb"] = round(len(raw) / 1024)
             ctype = resp.headers.get_content_type()
             charset = resp.headers.get_content_charset() or "utf-8"
             result["content_type"] = ctype
@@ -138,10 +234,12 @@ def fetch(url, timeout=15):
     except urllib.error.HTTPError as e:
         result["status"] = e.code
         result["final_url"] = e.url or url
+        result["response_time"] = time.monotonic() - started
     except urllib.error.URLError as e:
         result["error"] = str(e.reason)
     except Exception as e:  # noqa: BLE001 — timeout, bad charset, etc.
         result["error"] = str(e)
+    result["redirect_count"] = redirects["count"]
     return result
 
 
@@ -172,6 +270,92 @@ def _norm_for_compare(url):
     parts = urlsplit(urldefrag(url)[0])
     path = parts.path.rstrip("/") or "/"
     return (parts.netloc.lower(), path, parts.query)
+
+
+_VOWELS = set("aeiouyàâäéèêëîïôöùûü")
+_WORD_RE = re.compile(r"[a-zà-öø-ÿ][a-zà-öø-ÿ'-]{2,}", re.IGNORECASE)
+_SENTENCE_RE = re.compile(r"[.!?…]+")
+
+
+def _count_syllables(word):
+    """Heuristic syllable count: vowel groups, minus a final mute e."""
+    word = word.lower()
+    groups = 0
+    previous_vowel = False
+    for ch in word:
+        is_vowel = ch in _VOWELS
+        if is_vowel and not previous_vowel:
+            groups += 1
+        previous_vowel = is_vowel
+    if word.endswith("e") and groups > 1:
+        groups -= 1
+    return max(1, groups)
+
+
+def flesch_reading_ease(text):
+    """Flesch Reading Ease (0-100-ish) and its label, or (None, "")."""
+    sentences = [s for s in _SENTENCE_RE.split(text) if s.strip()]
+    words = _WORD_RE.findall(text)
+    if len(words) < 30 or not sentences:
+        return None, ""
+    syllables = sum(_count_syllables(w) for w in words)
+    score = (206.835 - 1.015 * (len(words) / len(sentences))
+             - 84.6 * (syllables / len(words)))
+    score = round(max(0, min(120, score)))
+    for threshold, label in ((90, "Very easy"), (80, "Easy"),
+                             (70, "Fairly easy"), (60, "Standard"),
+                             (50, "Fairly difficult"), (30, "Difficult")):
+        if score >= threshold:
+            return score, label
+    return score, "Very difficult"
+
+
+def top_keywords(text, limit=TOP_KEYWORDS):
+    """Most frequent significant words: [(word, count), ...]."""
+    counts = {}
+    for word in _WORD_RE.findall(text.lower()):
+        if word not in STOPWORDS:
+            counts[word] = counts.get(word, 0) + 1
+    ranked = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    return ranked[:limit]
+
+
+def _schema_types(ldjson_blocks):
+    """Distinct @type values found in ld+json blocks."""
+    types = []
+
+    def collect(node):
+        if isinstance(node, dict):
+            t = node.get("@type")
+            if isinstance(t, str):
+                types.append(t)
+            elif isinstance(t, list):
+                types.extend(x for x in t if isinstance(x, str))
+            for value in node.values():
+                collect(value)
+        elif isinstance(node, list):
+            for item in node:
+                collect(item)
+
+    for block in ldjson_blocks:
+        try:
+            collect(json.loads(block))
+        except (ValueError, TypeError):
+            continue
+    seen = []
+    for t in types:
+        if t not in seen:
+            seen.append(t)
+    return seen
+
+
+def og_status(og):
+    """'complete' / 'partial' / 'missing' for og:title+description+image."""
+    have = sum(1 for k in ("og:title", "og:description", "og:image")
+               if og.get(k))
+    if have == 3:
+        return "complete"
+    return "partial" if have else "missing"
 
 
 def _issue(severity, category, message):
@@ -227,6 +411,42 @@ def page_issues(page):
         issues.append(_issue("warning", "images",
                              "%d image(s) without alt attribute"
                              % page["images_without_alt"]))
+    if not page["lang"]:
+        issues.append(_issue("warning", "technical",
+                             "Missing lang attribute on <html>"))
+    if not page["viewport"]:
+        issues.append(_issue("warning", "technical",
+                             "No viewport meta tag (not mobile-friendly)"))
+    if page["og"] == "missing":
+        issues.append(_issue("warning", "social",
+                             "No Open Graph tags (poor social sharing)"))
+    elif page["og"] == "partial":
+        issues.append(_issue("info", "social",
+                             "Incomplete Open Graph tags (need title, "
+                             "description and image)"))
+    if not page["schema_types"] and not page["schema_count"]:
+        issues.append(_issue("info", "technical",
+                             "No structured data (schema.org)"))
+    if not page["is_https"]:
+        issues.append(_issue("warning", "security", "Page served over HTTP"))
+    if page["mixed_content"]:
+        issues.append(_issue("warning", "security",
+                             "%d insecure http:// resource(s) on an HTTPS page"
+                             % page["mixed_content"]))
+    if page["unsafe_blank_links"]:
+        issues.append(_issue("info", "security",
+                             '%d target="_blank" link(s) without rel="noopener"'
+                             % page["unsafe_blank_links"]))
+    if page["redirect_count"] >= REDIRECT_CHAIN_MIN:
+        issues.append(_issue("warning", "performance",
+                             "Redirect chain (%d hops) to reach the page"
+                             % page["redirect_count"]))
+    if page["response_time"] > SLOW_RESPONSE_S:
+        issues.append(_issue("info", "performance",
+                             "Slow response (%.1fs)" % page["response_time"]))
+    if 0 < page["text_ratio"] < LOW_TEXT_RATIO:
+        issues.append(_issue("info", "content",
+                             "Low text/HTML ratio (%d%%)" % page["text_ratio"]))
     return issues
 
 
@@ -246,16 +466,27 @@ def page_score(page):
 def fetch_page(url, timeout=15):
     """Fetch and analyze one page. Returns a flat dict of SEO signals."""
     f = fetch(url, timeout=timeout)
+    final_url = f["final_url"] or url
     page = {
         "url": url,
         "status": f["status"],
-        "final_url": f["final_url"] or url,
+        "final_url": final_url,
         "content_type": f["content_type"],
         "is_html": f["is_html"],
         "error": f["error"],
+        "response_time": round(f["response_time"], 2),
+        "page_size_kb": f["page_size_kb"],
+        "redirect_count": f["redirect_count"],
+        "is_https": urlsplit(final_url).scheme == "https",
         "title": "", "meta_description": "", "meta_robots": "", "canonical": "",
-        "h1": [], "word_count": 0, "internal_links": 0, "external_links": 0,
+        "h1": [], "h2_count": 0, "word_count": 0,
+        "internal_links": 0, "external_links": 0,
         "images": 0, "images_without_alt": 0, "links": [],
+        "lang": "", "viewport": True, "has_favicon_link": False,
+        "og": "missing", "hreflangs": [], "schema_types": [], "schema_count": 0,
+        "mixed_content": 0, "unsafe_blank_links": 0,
+        "text_ratio": 0, "flesch_score": None, "flesch_label": "",
+        "top_keywords": [], "link_score": 0,
     }
     if f["is_html"] and f["body"] and not f["error"] and 0 < f["status"] < 400:
         parser = SeoPageParser()
@@ -263,21 +494,37 @@ def fetch_page(url, timeout=15):
             parser.feed(f["body"])
         except Exception:  # noqa: BLE001 — badly broken HTML
             pass
+        text = " ".join(parser.text_parts)
+        flesch, flesch_label = flesch_reading_ease(text)
         page.update({
             "title": (parser.title or "").strip(),
             "meta_description": (parser.meta_description or "").strip(),
             "meta_robots": (parser.meta_robots or "").strip(),
             "canonical": (parser.canonical or "").strip(),
             "h1": parser.h1,
+            "h2_count": parser.h2_count,
             "word_count": parser.word_count,
             "images": parser.images,
             "images_without_alt": parser.images_without_alt,
             "links": parser.links,
+            "lang": parser.lang,
+            "viewport": parser.viewport,
+            "has_favicon_link": parser.has_favicon_link,
+            "og": og_status(parser.og),
+            "hreflangs": parser.hreflangs,
+            "schema_types": _schema_types(parser.ldjson),
+            "schema_count": len(parser.ldjson),
+            "unsafe_blank_links": parser.unsafe_blank_links,
+            "text_ratio": (round(len(text) * 100 / len(f["body"]))
+                           if f["body"] else 0),
+            "flesch_score": flesch,
+            "flesch_label": flesch_label,
+            "top_keywords": top_keywords(text),
         })
-        site_netloc = urlsplit(page["final_url"]).netloc
+        site_netloc = urlsplit(final_url).netloc
         internal = external = 0
         for href in parser.links:
-            parts = urlsplit(urljoin(page["final_url"], href))
+            parts = urlsplit(urljoin(final_url, href))
             if parts.scheme not in ("http", "https"):
                 continue
             if same_site(parts.netloc, site_netloc):
@@ -286,9 +533,54 @@ def fetch_page(url, timeout=15):
                 external += 1
         page["internal_links"] = internal
         page["external_links"] = external
+        if page["is_https"]:
+            page["mixed_content"] = sum(
+                1 for res in parser.resource_urls
+                if res.strip().lower().startswith("http://"))
     page["issues"] = page_issues(page)
     page["score"] = page_score(page)
     return page
+
+
+def compute_link_scores(pages, site_netloc=None):
+    """Internal PageRank over the crawled pages, normalized 1-100.
+
+    Follows the classic formulation: damping 0.85, 10 iterations, links to
+    non-crawled or self URLs ignored. Sets page["link_score"] in place.
+    """
+    ok = [p for p in pages
+          if p["is_html"] and not p["error"] and 0 < p["status"] < 400]
+    if not ok:
+        return
+    if site_netloc is None:
+        site_netloc = urlsplit(ok[0]["final_url"]).netloc
+    index = {}
+    for i, page in enumerate(ok):
+        index.setdefault(page["url"], i)
+        index.setdefault(page["final_url"], i)
+    outlinks = []
+    for i, page in enumerate(ok):
+        targets = set()
+        for href in page["links"]:
+            normalized = normalize_link(page["final_url"], href, site_netloc)
+            j = index.get(normalized)
+            if j is not None and j != i:
+                targets.add(j)
+        outlinks.append(targets)
+    n = len(ok)
+    scores = [1.0 / n] * n
+    for _ in range(PAGERANK_ITERATIONS):
+        fresh = [(1 - PAGERANK_DAMPING) / n] * n
+        for i, targets in enumerate(outlinks):
+            if targets:
+                share = PAGERANK_DAMPING * scores[i] / len(targets)
+                for j in targets:
+                    fresh[j] += share
+        scores = fresh
+    lo, hi = min(scores), max(scores)
+    for page, score in zip(ok, scores):
+        page["link_score"] = (
+            100 if hi == lo else round(1 + 99 * (score - lo) / (hi - lo)))
 
 
 def load_robots(origin, timeout=10):
@@ -393,20 +685,30 @@ def crawl(root_url, max_pages=30, use_sitemap=True, follow_links=True,
         if follow_links and page["is_html"]:
             enqueue(page["final_url"], page["links"], "link")
 
+    compute_link_scores(pages, site_netloc)
+
+    # Favicon: any <link rel=icon> on the site, else the /favicon.ico fallback.
+    favicon_ok = any(p.get("has_favicon_link") for p in pages)
+    if not favicon_ok:
+        favicon_ok = fetch(origin + "/favicon.ico", timeout=10)["status"] == 200
+
     return {
         "pages": pages,
         "discovered": len(seen),
         "disallowed": disallowed,
         "sitemap_urls": sitemap_count,
         "site_netloc": site_netloc,
+        "favicon_ok": favicon_ok,
     }
 
 
-def analyze_site(pages):
+def analyze_site(pages, favicon_ok=True):
     """Cross-page issues over a crawl result (list of strings)."""
     issues = []
     ok = [p for p in pages
           if p["is_html"] and not p["error"] and 0 < p["status"] < 400]
+    if not favicon_ok:
+        issues.append("No favicon found (no <link rel=icon> and no /favicon.ico)")
 
     errors = [p for p in pages if p["error"] or p["status"] >= 400]
     for p in errors:

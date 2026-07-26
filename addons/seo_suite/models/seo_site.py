@@ -43,11 +43,17 @@ class SeoSite(models.Model):
     score = fields.Integer(
         compute="_compute_stats", string="Score",
         help="Average of page scores (0-100).")
+    avg_response_time = fields.Float(
+        compute="_compute_stats", string="Avg response time (s)",
+        digits=(6, 2))
+    avg_word_count = fields.Integer(
+        compute="_compute_stats", string="Avg word count")
 
     @api.depends("audit_ids.issue_count", "audit_ids.score",
                  "audit_ids.status_code", "audit_ids.error",
                  "audit_ids.critical_count", "audit_ids.warning_count",
-                 "audit_ids.info_count")
+                 "audit_ids.info_count", "audit_ids.response_time",
+                 "audit_ids.word_count")
     def _compute_stats(self):
         for rec in self:
             audits = rec.audit_ids
@@ -60,6 +66,14 @@ class SeoSite(models.Model):
                 lambda a: a.error or a.status_code >= 400))
             rec.score = (
                 round(sum(audits.mapped("score")) / len(audits))
+                if audits else 0
+            )
+            rec.avg_response_time = (
+                sum(audits.mapped("response_time")) / len(audits)
+                if audits else 0.0
+            )
+            rec.avg_word_count = (
+                round(sum(audits.mapped("word_count")) / len(audits))
                 if audits else 0
             )
 
@@ -86,7 +100,7 @@ class SeoSite(models.Model):
             for page in pages
         ])
 
-        site_issues = analyze_site(pages)
+        site_issues = analyze_site(pages, result.get("favicon_ok", True))
         self.write({
             "last_crawl": fields.Datetime.now(),
             "discovered_count": result["discovered"],

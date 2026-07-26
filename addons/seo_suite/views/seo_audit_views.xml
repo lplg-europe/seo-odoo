@@ -42,15 +42,38 @@
                             <field name="audit_date"/>
                             <field name="issue_count"/>
                             <field name="score"/>
+                            <field name="link_score"/>
                             <field name="site_id" invisible="not site_id"/>
                             <field name="error" invisible="not error"/>
                         </group>
+                        <group string="Performance">
+                            <field name="response_time"/>
+                            <field name="page_size_kb"/>
+                            <field name="redirect_count"/>
+                            <field name="is_https"/>
+                            <field name="viewport"/>
+                        </group>
+                    </group>
+                    <group>
                         <group string="Content">
                             <field name="word_count"/>
+                            <field name="h2_count"/>
                             <field name="internal_links"/>
                             <field name="external_links"/>
                             <field name="images"/>
                             <field name="images_without_alt"/>
+                            <field name="text_ratio"/>
+                            <field name="flesch_score"/>
+                            <field name="flesch_label"/>
+                        </group>
+                        <group string="Social &amp; Structured data">
+                            <field name="og_status"/>
+                            <field name="schema_count"/>
+                            <field name="schema_types"/>
+                            <field name="hreflang_count"/>
+                            <field name="lang"/>
+                            <field name="mixed_content"/>
+                            <field name="unsafe_blank_links"/>
                         </group>
                     </group>
                     <group string="On-page">
@@ -61,6 +84,7 @@
                         <field name="h1"/>
                         <field name="canonical"/>
                         <field name="meta_robots"/>
+                        <field name="top_keywords"/>
                     </group>
                     <group string="Detected issues">
                         <field name="issue_ids" nolabel="1" readonly="1">

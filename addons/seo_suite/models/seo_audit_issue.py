@@ -16,6 +16,9 @@ CATEGORIES = [
     ("content", "Content"),
     ("images", "Images"),
     ("links", "Links"),
+    ("social", "Social / Open Graph"),
+    ("performance", "Performance"),
+    ("security", "Security"),
     ("technical", "Technical"),
 ]
 

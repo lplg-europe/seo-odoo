@@ -30,11 +30,37 @@ class SeoAudit(models.Model):
     canonical = fields.Char(string="Canonical", readonly=True)
     h1 = fields.Text(string="H1", readonly=True)
     h1_count = fields.Integer(string="H1 count", readonly=True)
+    h2_count = fields.Integer(string="H2 count", readonly=True)
     word_count = fields.Integer(string="Word count", readonly=True)
     internal_links = fields.Integer(string="Internal links", readonly=True)
     external_links = fields.Integer(string="External links", readonly=True)
     images = fields.Integer(string="Images", readonly=True)
     images_without_alt = fields.Integer(string="Images without alt", readonly=True)
+    response_time = fields.Float(string="Response time (s)", digits=(6, 2),
+                                 readonly=True)
+    page_size_kb = fields.Integer(string="Page size (KB)", readonly=True)
+    redirect_count = fields.Integer(string="Redirect hops", readonly=True)
+    is_https = fields.Boolean(string="HTTPS", readonly=True)
+    lang = fields.Char(string="Language", readonly=True)
+    viewport = fields.Boolean(string="Mobile viewport", readonly=True)
+    og_status = fields.Selection(
+        [("complete", "Complete"), ("partial", "Partial"),
+         ("missing", "Missing")],
+        string="Open Graph", readonly=True)
+    schema_types = fields.Char(string="Schema.org types", readonly=True)
+    schema_count = fields.Integer(string="Schema blocks", readonly=True)
+    hreflang_count = fields.Integer(string="Hreflang tags", readonly=True)
+    mixed_content = fields.Integer(string="Mixed content", readonly=True)
+    unsafe_blank_links = fields.Integer(
+        string="Unsafe _blank links", readonly=True)
+    text_ratio = fields.Integer(
+        string="Text/HTML ratio (%)", readonly=True)
+    flesch_score = fields.Integer(string="Readability", readonly=True)
+    flesch_label = fields.Char(string="Readability level", readonly=True)
+    top_keywords = fields.Text(string="Top keywords", readonly=True)
+    link_score = fields.Integer(
+        string="Link score", readonly=True,
+        help="Internal PageRank of the page within the crawl (1-100).")
     issues = fields.Text(string="Detected issues", readonly=True)
     issue_count = fields.Integer(string="Issue count", readonly=True)
     issue_ids = fields.One2many(
@@ -81,11 +107,31 @@ class SeoAudit(models.Model):
             "canonical": page["canonical"],
             "h1": "\n".join(page["h1"]),
             "h1_count": len(page["h1"]),
+            "h2_count": page["h2_count"],
             "word_count": page["word_count"],
             "internal_links": page["internal_links"],
             "external_links": page["external_links"],
             "images": page["images"],
             "images_without_alt": page["images_without_alt"],
+            "response_time": page["response_time"],
+            "page_size_kb": page["page_size_kb"],
+            "redirect_count": page["redirect_count"],
+            "is_https": page["is_https"],
+            "lang": page["lang"],
+            "viewport": page["viewport"],
+            "og_status": page["og"],
+            "schema_types": ", ".join(page["schema_types"])[:256],
+            "schema_count": page["schema_count"],
+            "hreflang_count": len(page["hreflangs"]),
+            "mixed_content": page["mixed_content"],
+            "unsafe_blank_links": page["unsafe_blank_links"],
+            "text_ratio": page["text_ratio"],
+            "flesch_score": page["flesch_score"] or 0,
+            "flesch_label": page["flesch_label"],
+            "top_keywords": ", ".join(
+                "%s (%d)" % (word, count)
+                for word, count in page["top_keywords"]),
+            "link_score": page["link_score"],
             "issues": "\n".join(
                 i["message"] for i in issues) or "No issues detected",
             "issue_count": len(issues),

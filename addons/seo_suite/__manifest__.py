@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     "name": "SEO Suite",
-    "version": "19.0.1.2.0",
+    "version": "19.0.1.3.0",
     "summary": "SEO suite for Odoo: on-page, technical and content audit.",
     "description": """
 SEO Suite
@@ -11,8 +11,13 @@ rewrites, schema or breadcrumbs.
 
 On-page SEO audit:
 - Crawl a URL (free, no API key)
-- Title, meta description, H1, canonical, robots
+- Title, meta description, H1/H2, canonical, robots, lang, viewport
 - Internal/external links, images (and images without alt), word count
+- Open Graph, Schema.org (JSON-LD types), hreflang, favicon
+- Performance: response time, page size, redirect chains
+- Security: HTTPS, mixed content, unsafe target=_blank links
+- Content: readability (Flesch), text/HTML ratio, top keywords (FR/EN)
+- Internal PageRank (link score 1-100) across the crawl
 - Automatic detection of on-page SEO issues, 0-100 score
 
 Site crawl (multi-page):
