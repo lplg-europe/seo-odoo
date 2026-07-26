@@ -18,6 +18,11 @@
                                  help="Paste the full JSON key of a Google Cloud service account (Search Console API + Analytics Data API enabled), then add its email to your Search Console property and GA4 property. See the field tooltip for the 3 steps.">
                             <field name="seo_google_service_account" password="True"/>
                         </setting>
+                        <setting string="DataForSEO"
+                                 help="Paid BYO API (dataforseo.com) for keyword search volumes / CPC and live SERP snapshots — the legal alternative to scraping Google.">
+                            <field name="seo_dataforseo_login"/>
+                            <field name="seo_dataforseo_password" password="True"/>
+                        </setting>
                     </block>
                 </app>
             </xpath>

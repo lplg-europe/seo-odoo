@@ -57,6 +57,12 @@
                             <field name="critical_count" widget="statinfo"
                                    string="Critical"/>
                         </button>
+                        <button name="action_view_history" type="object"
+                                class="oe_stat_button" icon="fa-line-chart"
+                                invisible="history_count &lt; 2">
+                            <field name="history_count" widget="statinfo"
+                                   string="Crawls"/>
+                        </button>
                     </div>
                     <div class="oe_title">
                         <label for="name" string="Site URL"/>
@@ -68,6 +74,7 @@
                             <field name="use_sitemap"/>
                             <field name="follow_links"/>
                             <field name="check_links"/>
+                            <field name="auto_crawl_interval"/>
                             <field name="gsc_property"
                                    placeholder="auto-detected on first sync"/>
                             <field name="ga4_property_id"
@@ -122,6 +129,31 @@
                         <page string="Site issues" name="site_issues">
                             <field name="site_issue_count" invisible="1"/>
                             <field name="site_issues" nolabel="1"/>
+                        </page>
+                        <page string="Keywords" name="keywords">
+                            <button name="action_fetch_volumes" type="object"
+                                    string="Fetch volumes (DataForSEO)"
+                                    icon="fa-usd" class="btn-secondary mb-2"
+                                    invisible="keyword_count == 0"/>
+                            <field name="keyword_ids"
+                                   context="{'default_site_id': id}">
+                                <list editable="bottom"
+                                      decoration-success="position and position &lt;= 10"
+                                      decoration-muted="position &gt;= 101">
+                                    <field name="name"/>
+                                    <field name="position"/>
+                                    <field name="position_delta"/>
+                                    <field name="clicks"/>
+                                    <field name="impressions"/>
+                                    <field name="volume" optional="show"/>
+                                    <field name="best_page" optional="show"/>
+                                    <field name="our_position_serp" optional="hide"/>
+                                    <button name="action_view_history" type="object"
+                                            icon="fa-line-chart" title="Position history"/>
+                                    <button name="action_analyze_serp" type="object"
+                                            icon="fa-search" title="Analyze live SERP (DataForSEO, paid)"/>
+                                </list>
+                            </field>
                         </page>
                         <page string="Search queries" name="search_queries"
                               invisible="not google_last_sync">

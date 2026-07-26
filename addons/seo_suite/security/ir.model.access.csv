@@ -2,3 +2,7 @@ id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
 access_seo_audit_user,seo.audit.user,model_seo_audit,base.group_user,1,1,1,1
 access_seo_site_user,seo.site.user,model_seo_site,base.group_user,1,1,1,1
 access_seo_audit_issue_user,seo.audit.issue.user,model_seo_audit_issue,base.group_user,1,1,1,1
+access_seo_crawl_history_user,seo.crawl.history.user,model_seo_crawl_history,base.group_user,1,1,1,1
+access_seo_keyword_user,seo.keyword.user,model_seo_keyword,base.group_user,1,1,1,1
+access_seo_keyword_history_user,seo.keyword.history.user,model_seo_keyword_history,base.group_user,1,1,1,1
+access_seo_report_wizard_user,seo.report.wizard.user,model_seo_report_wizard,base.group_user,1,1,1,1

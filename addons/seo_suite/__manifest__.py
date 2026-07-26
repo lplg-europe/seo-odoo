@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     "name": "SEO Suite",
-    "version": "19.0.1.5.0",
+    "version": "19.0.1.8.1",
     "summary": "SEO suite for Odoo: on-page, technical and content audit.",
     "description": """
 SEO Suite
@@ -33,6 +33,12 @@ Actionable output:
 - Printable SEO Audit Report (PDF): score, action plan by work stream,
   site-level issues, page detail — ready to hand to a client
 
+Tracking over time:
+- One snapshot per crawl: score trend graph, crawl diff (new / resolved
+  issues, added / removed pages)
+- Scheduled crawls: daily cron re-crawls each site every N days and syncs
+  Google data automatically
+
 Integrations:
 - Google PageSpeed Insights / Core Web Vitals per page (free BYO API key)
 - Broken internal links checker (HEAD pass over discovered URLs)
@@ -40,6 +46,10 @@ Integrations:
   position per page + top search queries + URL Inspection (real
   indexation status of every page)
 - Google Analytics 4: views, sessions, users, engagement per page
+- Keyword tracking: declare target queries, every sync stores the GSC
+  position — trend graph per keyword
+- DataForSEO (BYO paid key): monthly search volumes / CPC / competition
+  and live SERP snapshots (the legal alternative to scraping Google)
 
 Coming next: keyword research, AI recommendations, scheduled crawls.
 """,
@@ -53,8 +63,12 @@ Coming next: keyword research, AI recommendations, scheduled crawls.
         "views/seo_audit_views.xml",
         "views/seo_site_views.xml",
         "views/seo_issue_views.xml",
+        "views/seo_history_views.xml",
+        "views/seo_keyword_views.xml",
+        "views/seo_report_wizard_views.xml",
         "views/res_config_settings_views.xml",
         "report/seo_site_report.xml",
+        "data/ir_cron.xml",
     ],
     "images": ["static/description/icon.png"],
     "installable": True,

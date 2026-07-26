@@ -47,6 +47,14 @@
                                 <td t-out="doc.avg_word_count"/>
                             </tr>
                         </table>
+                        <t t-set="last" t-value="doc.history_ids[:1]"/>
+                        <p t-if="len(doc.history_ids) &gt; 1 and last">
+                            Trend vs previous crawl:
+                            <strong t-out="'%+d' % last.score_delta"/> score,
+                            <t t-out="last.resolved_issue_count"/> issue(s) resolved,
+                            <t t-out="last.new_issue_count"/> new issue(s)
+                            (<t t-out="len(doc.history_ids)"/> crawls tracked).
+                        </p>
 
                         <h3 class="mt-4">Action plan</h3>
                         <p>Detected issues grouped by work stream, most severe first.</p>
@@ -70,6 +78,35 @@
                                 </tr>
                             </tbody>
                         </table>
+
+                        <t t-if="doc.keyword_ids">
+                            <h3 class="mt-4">Tracked keywords</h3>
+                            <table class="table table-sm table-bordered">
+                                <thead>
+                                    <tr>
+                                        <th>Keyword</th>
+                                        <th class="text-end">Position</th>
+                                        <th class="text-end">Δ places</th>
+                                        <th class="text-end">Clicks (28d)</th>
+                                        <th class="text-end">Impressions</th>
+                                        <th class="text-end">Volume/month</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr t-foreach="doc.keyword_ids" t-as="kw">
+                                        <td t-out="kw.name"/>
+                                        <td class="text-end"
+                                            t-out="'100+' if kw.position &gt;= 101 else ('%.1f' % kw.position if kw.position else '-')"/>
+                                        <td class="text-end"
+                                            t-out="('%+.1f' % kw.position_delta) if kw.position_delta else '-'"/>
+                                        <td class="text-end" t-out="kw.clicks"/>
+                                        <td class="text-end" t-out="kw.impressions"/>
+                                        <td class="text-end"
+                                            t-out="kw.volume or '-'"/>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </t>
 
                         <h3 class="mt-4">Site-level issues</h3>
                         <p style="white-space: pre-line;" t-field="doc.site_issues"/>

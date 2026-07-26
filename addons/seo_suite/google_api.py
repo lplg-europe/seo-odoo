@@ -141,7 +141,10 @@ def gsc_list_sites(token):
 
 def gsc_search_analytics(token, site_url, dimension="page", days=28,
                          row_limit=500):
-    """Search Analytics rows: [{key, clicks, impressions, ctr, position}]."""
+    """Search Analytics rows: [{key, keys, clicks, impressions, ctr,
+    position}]. `dimension` may be a string or a list of dimensions."""
+    dimensions = ([dimension] if isinstance(dimension, str)
+                  else list(dimension))
     end = date.today()
     start = end - timedelta(days=days)
     data = _api_request(
@@ -150,13 +153,15 @@ def gsc_search_analytics(token, site_url, dimension="page", days=28,
         {
             "startDate": start.isoformat(),
             "endDate": end.isoformat(),
-            "dimensions": [dimension],
+            "dimensions": dimensions,
             "rowLimit": row_limit,
         })
     rows = []
     for row in data.get("rows", []):
+        keys = row.get("keys") or [""]
         rows.append({
-            "key": (row.get("keys") or [""])[0],
+            "key": keys[0],
+            "keys": keys,
             "clicks": int(row.get("clicks", 0)),
             "impressions": int(row.get("impressions", 0)),
             "ctr": round(row.get("ctr", 0.0) * 100, 2),

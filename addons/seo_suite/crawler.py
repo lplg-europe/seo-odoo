@@ -76,10 +76,9 @@ class SeoPageParser(HTMLParser):
         self.meta_description = None
         self.meta_robots = None
         self.canonical = None
-        self.h1 = []
-        self._in_h1 = False
-        self._h1_buf = ""
-        self.h2_count = 0
+        self.headings = []  # ordered (level, text) for h1..h6, capped
+        self._heading_level = 0
+        self._heading_buf = ""
         self.images = 0
         self.images_without_alt = 0
         self.links = []  # raw href values of <a> tags
@@ -136,11 +135,9 @@ class SeoPageParser(HTMLParser):
                 self.hreflangs.append(a["hreflang"].strip())
             elif rel == "stylesheet" and href:
                 self.resource_urls.append(href)
-        elif tag == "h1":
-            self._in_h1 = True
-            self._h1_buf = ""
-        elif tag == "h2":
-            self.h2_count += 1
+        elif tag in ("h1", "h2", "h3", "h4", "h5", "h6"):
+            self._heading_level = int(tag[1])
+            self._heading_buf = ""
         elif tag == "a":
             href = (a.get("href") or "").strip()
             if href and not href.startswith(("#", "mailto:", "tel:", "javascript:")):
@@ -174,11 +171,19 @@ class SeoPageParser(HTMLParser):
             return
         if tag == "title":
             self._in_title = False
-        elif tag == "h1":
-            self._in_h1 = False
-            text = self._h1_buf.strip()
-            if text:
-                self.h1.append(text)
+        elif tag in ("h1", "h2", "h3", "h4", "h5", "h6"):
+            text = self._heading_buf.strip()
+            if text and len(self.headings) < 200:
+                self.headings.append((int(tag[1]), text))
+            self._heading_level = 0
+
+    @property
+    def h1(self):
+        return [text for level, text in self.headings if level == 1]
+
+    @property
+    def h2_count(self):
+        return sum(1 for level, _ in self.headings if level == 2)
 
     def handle_data(self, data):
         if self._in_ldjson:
@@ -187,8 +192,8 @@ class SeoPageParser(HTMLParser):
             return
         if self._in_title:
             self.title = (self.title or "") + data
-        if self._in_h1:
-            self._h1_buf += data
+        if self._heading_level:
+            self._heading_buf += data
         stripped = data.strip()
         if stripped:
             self.word_count += len(stripped.split())
@@ -205,11 +210,12 @@ def fetch(url, timeout=15):
         "content_type": "", "is_html": False, "error": "",
         "response_time": 0.0, "page_size_kb": 0, "redirect_count": 0,
     }
-    redirects = {"count": 0}
+    redirects = {"count": 0, "chain": []}
 
     class _CountingRedirectHandler(urllib.request.HTTPRedirectHandler):
         def redirect_request(self, req, fp, code, msg, headers, newurl):
             redirects["count"] += 1
+            redirects["chain"].append("[%d] %s" % (code, newurl))
             return super().redirect_request(req, fp, code, msg, headers, newurl)
 
     opener = urllib.request.build_opener(_CountingRedirectHandler)
@@ -243,6 +249,7 @@ def fetch(url, timeout=15):
     except Exception as e:  # noqa: BLE001 — timeout, bad charset, etc.
         result["error"] = str(e)
     result["redirect_count"] = redirects["count"]
+    result["redirect_chain"] = redirects["chain"]
     return result
 
 
@@ -480,9 +487,11 @@ def fetch_page(url, timeout=15):
         "response_time": round(f["response_time"], 2),
         "page_size_kb": f["page_size_kb"],
         "redirect_count": f["redirect_count"],
+        "redirect_chain": f["redirect_chain"],
         "is_https": urlsplit(final_url).scheme == "https",
         "title": "", "meta_description": "", "meta_robots": "", "canonical": "",
-        "h1": [], "h2_count": 0, "word_count": 0,
+        "h1": [], "h2_count": 0, "headings": [], "reading_time": 0,
+        "word_count": 0,
         "internal_links": 0, "external_links": 0,
         "images": 0, "images_without_alt": 0, "links": [],
         "lang": "", "viewport": True, "has_favicon_link": False,
@@ -506,6 +515,8 @@ def fetch_page(url, timeout=15):
             "canonical": (parser.canonical or "").strip(),
             "h1": parser.h1,
             "h2_count": parser.h2_count,
+            "headings": parser.headings,
+            "reading_time": (parser.word_count + 249) // 250,
             "word_count": parser.word_count,
             "images": parser.images,
             "images_without_alt": parser.images_without_alt,
@@ -575,7 +586,9 @@ def pagespeed(url, api_key=None, strategy="mobile", timeout=90):
     for occasional calls; a (free) key raises the quota.
     """
     result = {"performance": 0, "accessibility": 0, "best_practices": 0,
-              "seo": 0, "lcp": "", "cls": "", "tbt": "", "error": ""}
+              "seo": 0, "lcp": "", "cls": "", "tbt": "", "fcp": "",
+              "speed_index": "", "dom_size": 0, "total_weight_kb": 0,
+              "render_blocking": 0, "long_tasks": 0, "error": ""}
     params = [("url", url), ("strategy", strategy)]
     params += [("category", c) for c in
                ("performance", "accessibility", "best-practices", "seo")]
@@ -601,20 +614,37 @@ def pagespeed(url, api_key=None, strategy="mobile", timeout=90):
         result["error"] = str(e)
         return result
 
+    result.update(parse_pagespeed(data))
+    return result
+
+
+def parse_pagespeed(data):
+    """Category scores + key Lighthouse audits from a PSI v5 response."""
+    parsed = {}
     lighthouse = data.get("lighthouseResult") or {}
     categories = lighthouse.get("categories") or {}
-    for key, api_key_name in (("performance", "performance"),
-                              ("accessibility", "accessibility"),
-                              ("best_practices", "best-practices"),
-                              ("seo", "seo")):
-        score = (categories.get(api_key_name) or {}).get("score")
-        result[key] = round(score * 100) if score is not None else 0
+    for key, category_name in (("performance", "performance"),
+                               ("accessibility", "accessibility"),
+                               ("best_practices", "best-practices"),
+                               ("seo", "seo")):
+        score = (categories.get(category_name) or {}).get("score")
+        parsed[key] = round(score * 100) if score is not None else 0
     audits = lighthouse.get("audits") or {}
     for key, audit_name in (("lcp", "largest-contentful-paint"),
                             ("cls", "cumulative-layout-shift"),
-                            ("tbt", "total-blocking-time")):
-        result[key] = (audits.get(audit_name) or {}).get("displayValue") or ""
-    return result
+                            ("tbt", "total-blocking-time"),
+                            ("fcp", "first-contentful-paint"),
+                            ("speed_index", "speed-index")):
+        parsed[key] = (audits.get(audit_name) or {}).get("displayValue") or ""
+    dom = (audits.get("dom-size") or {}).get("numericValue")
+    parsed["dom_size"] = int(dom) if dom else 0
+    weight = (audits.get("total-byte-weight") or {}).get("numericValue")
+    parsed["total_weight_kb"] = round(weight / 1024) if weight else 0
+    for key, audit_name in (("render_blocking", "render-blocking-resources"),
+                            ("long_tasks", "long-tasks")):
+        details = (audits.get(audit_name) or {}).get("details") or {}
+        parsed[key] = len(details.get("items") or [])
+    return parsed
 
 
 def compute_link_scores(pages, site_netloc=None):

@@ -23,6 +23,11 @@ Console, keywords and AI recommendations planned.
 | Broken links | ✅ | Optional HEAD pass over discovered-but-not-crawled URLs, with referring pages |
 | Search Console | ✅ | BYO service account: clicks/impressions/CTR/position per page, top queries, and **URL Inspection** (real indexation status of every page) |
 | Google Analytics 4 | ✅ | Views, sessions, users, engagement per page (28 days) |
+| History & trend | ✅ | One snapshot per crawl: score trend graph + crawl diff (new/resolved issues, added/removed pages) |
+| Scheduled crawls | ✅ | Daily cron re-crawls each site every N days and syncs Google data — the recurring-contract engine |
+| Keyword tracking | ✅ | Declare target queries; every sync stores the GSC position → trend per keyword |
+| SERP & volumes | ✅ | DataForSEO (BYO paid key): monthly volumes/CPC/competition + live SERP snapshots with competitor list |
+| Quick audit | ✅ | One-click wizard: paste a prospect URL → crawl → printable report (built for "free SEO audit" offers) |
 
 The crawl engine ([crawler.py](addons/seo_suite/crawler.py)) is pure Python
 stdlib with **no Odoo dependency** — it can be reused standalone (scripts, CI,
@@ -32,9 +37,9 @@ The crawl engine stays dependency-free; Google integrations sign their
 service-account JWT with `cryptography`, which ships with standard Odoo.
 
 ### Roadmap
-- Scheduled crawls (cron) + history / score trend
-- Keyword research (BYO DataForSEO key, premium)
 - AI recommendations (Claude / Gemini)
+- Backlinks & domain overview (DataForSEO)
+- Server log analyzer (bots, LLM crawlers)
 - Odoo Website helpers: sitemap, robots, schema, redirects
 
 ## Installation (dev)

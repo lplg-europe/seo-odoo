@@ -2,12 +2,17 @@
 """Multi-page site crawl — discovers URLs (sitemap + internal links) and
 audits every page, then reports cross-page issues."""
 import json
+import logging
+import re
+from datetime import timedelta
 from urllib.parse import urlsplit
 
 from odoo import api, fields, models
 from odoo.exceptions import UserError
 
 from ..crawler import analyze_site, crawl
+
+_logger = logging.getLogger(__name__)
 
 
 class SeoSite(models.Model):
@@ -31,6 +36,11 @@ class SeoSite(models.Model):
         string="Check remaining links", default=False,
         help="After the crawl, HEAD-check the discovered-but-not-crawled "
              "URLs to surface broken internal links (slower).")
+    auto_crawl_interval = fields.Integer(
+        string="Auto-crawl every (days)", default=0,
+        help="0 disables scheduled crawls. Otherwise the daily cron "
+             "re-crawls the site every N days (and syncs Google data when "
+             "a service account is configured), building the score history.")
     last_crawl = fields.Datetime(string="Last crawl", readonly=True)
     discovered_count = fields.Integer(
         string="URLs discovered", readonly=True,
@@ -57,6 +67,49 @@ class SeoSite(models.Model):
         compute="_compute_index_stats", string="Indexed pages")
     not_indexed_page_count = fields.Integer(
         compute="_compute_index_stats", string="Not indexed")
+    history_ids = fields.One2many(
+        "seo.crawl.history", "site_id", string="Crawl history")
+    history_count = fields.Integer(
+        compute="_compute_history_count", string="Crawls")
+    keyword_ids = fields.One2many(
+        "seo.keyword", "site_id", string="Tracked keywords")
+    keyword_count = fields.Integer(
+        compute="_compute_keyword_count", string="Keywords")
+    dfs_location = fields.Char(
+        string="SERP location", default="Belgium",
+        help="DataForSEO location_name for volumes and live SERPs, "
+             'e.g. "Belgium" or "Paris,Ile-de-France,France".')
+    dfs_language = fields.Char(
+        string="SERP language", default="fr",
+        help="DataForSEO language_code, e.g. fr, nl, en.")
+
+    @api.depends("history_ids")
+    def _compute_history_count(self):
+        for rec in self:
+            rec.history_count = len(rec.history_ids)
+
+    @api.depends("keyword_ids")
+    def _compute_keyword_count(self):
+        for rec in self:
+            rec.keyword_count = len(rec.keyword_ids)
+
+    def _bare_host(self):
+        self.ensure_one()
+        host = urlsplit(
+            self.name if "://" in (self.name or "")
+            else "https://" + (self.name or "")).netloc.lower()
+        return host[4:] if host.startswith("www.") else host
+
+    def _dataforseo_credentials(self):
+        get_param = self.env["ir.config_parameter"].sudo().get_param
+        login = get_param("seo_suite.dataforseo_login")
+        password = get_param("seo_suite.dataforseo_password")
+        if not login or not password:
+            raise UserError(
+                "DataForSEO is not configured. Add the API login/password "
+                "in SEO → Configuration → Settings (paid service, "
+                "https://dataforseo.com).")
+        return login, password
 
     @api.depends("audit_ids.index_verdict")
     def _compute_index_stats(self):
@@ -163,7 +216,92 @@ class SeoSite(models.Model):
             "site_issues": "\n".join(site_issues) or "No site-level issues",
             "site_issue_count": len(site_issues),
         })
+        self._create_history_snapshot()
         return True
+
+    def _issue_keys(self):
+        """Stable identifiers of the current issues, for cross-crawl diffs.
+
+        Numbers are normalized ("Thin content (163 words)" -> "(N words)")
+        so a changed count does not read as a new issue.
+        """
+        self.ensure_one()
+        return {
+            "%s | %s | %s" % (
+                issue.url, issue.category, re.sub(r"\d+", "N", issue.message))
+            for issue in self.issue_ids
+        }
+
+    def _create_history_snapshot(self):
+        """Snapshot the crawl and diff it against the previous snapshot."""
+        self.ensure_one()
+        History = self.env["seo.crawl.history"]
+        previous = History.search(
+            [("site_id", "=", self.id)], order="date desc, id desc", limit=1)
+        current_issues = self._issue_keys()
+        current_urls = set(self.audit_ids.mapped("name"))
+        new_issues = resolved_issues = []
+        new_pages = removed_pages = []
+        if previous:
+            try:
+                prev_issues = set(json.loads(previous.issues_snapshot or "[]"))
+                prev_urls = set(json.loads(previous.urls_snapshot or "[]"))
+            except ValueError:
+                prev_issues, prev_urls = set(), set()
+            new_issues = sorted(current_issues - prev_issues)
+            resolved_issues = sorted(prev_issues - current_issues)
+            new_pages = sorted(current_urls - prev_urls)
+            removed_pages = sorted(prev_urls - current_urls)
+        History.create({
+            "site_id": self.id,
+            "score": self.score,
+            "score_delta": self.score - previous.score if previous else 0,
+            "page_count": self.page_count,
+            "discovered_count": self.discovered_count,
+            "error_page_count": self.error_page_count,
+            "issue_count": self.issue_count,
+            "critical_count": self.critical_count,
+            "warning_count": self.warning_count,
+            "info_count": self.info_count,
+            "site_issue_count": self.site_issue_count,
+            "broken_link_count": self.broken_link_count,
+            "avg_response_time": self.avg_response_time,
+            "avg_word_count": self.avg_word_count,
+            "new_issue_count": len(new_issues),
+            "resolved_issue_count": len(resolved_issues),
+            "new_issues": "\n".join(new_issues),
+            "resolved_issues": "\n".join(resolved_issues),
+            "new_page_count": len(new_pages),
+            "removed_page_count": len(removed_pages),
+            "new_pages": "\n".join(new_pages),
+            "removed_pages": "\n".join(removed_pages),
+            "issues_snapshot": json.dumps(sorted(current_issues)),
+            "urls_snapshot": json.dumps(sorted(current_urls)),
+        })
+
+    @api.model
+    def _cron_crawl(self):
+        """Daily cron: re-crawl sites whose interval has elapsed."""
+        now = fields.Datetime.now()
+        has_google = bool(self.env["ir.config_parameter"].sudo().get_param(
+            "seo_suite.google_service_account"))
+        for site in self.search([("auto_crawl_interval", ">", 0)]):
+            due = (not site.last_crawl or site.last_crawl
+                   + timedelta(days=site.auto_crawl_interval) <= now)
+            if not due:
+                continue
+            try:
+                site.action_crawl()
+                if has_google:
+                    try:
+                        site.action_sync_google()
+                    except Exception:  # noqa: BLE001 — Google is best-effort
+                        _logger.exception(
+                            "Scheduled Google sync failed for %s", site.name)
+                self.env.cr.commit()
+            except Exception:  # noqa: BLE001 — never break the whole batch
+                _logger.exception("Scheduled crawl failed for %s", site.name)
+                self.env.cr.rollback()
 
     def _google_token(self, scopes):
         """Access token from the configured service account, or UserError."""
@@ -267,13 +405,92 @@ class SeoSite(models.Model):
             "%-50s %6d clicks %8d impr.  CTR %5.1f%%  pos %5.1f" % (
                 row["key"][:50], row["clicks"], row["impressions"],
                 row["ctr"], row["position"])
-            for row in query_rows
+            for row in query_rows[:50]
         ]
+        self._sync_keywords(token, prop, query_rows)
         self.write({
             "google_last_sync": fields.Datetime.now(),
             "gsc_top_queries": "\n".join(top) or "No query data yet",
         })
         return True
+
+    def _sync_keywords(self, token, prop, query_rows):
+        """Refresh tracked keywords from GSC and add a daily history point."""
+        from ..google_api import GoogleApiError, gsc_search_analytics
+        from .seo_keyword import POSITION_NOT_FOUND
+        if not self.keyword_ids:
+            return
+        by_query = {row["key"].lower(): row for row in query_rows}
+        try:
+            page_rows = gsc_search_analytics(
+                token, prop, dimension=["query", "page"], row_limit=1000)
+        except GoogleApiError:
+            page_rows = []
+        best_page = {}
+        for row in page_rows:
+            query = row["keys"][0].lower()
+            if query not in best_page:  # rows come sorted by clicks desc
+                best_page[query] = row["keys"][1]
+        History = self.env["seo.keyword.history"]
+        today_start = fields.Datetime.now().replace(
+            hour=0, minute=0, second=0, microsecond=0)
+        for keyword in self.keyword_ids:
+            row = by_query.get(keyword.name.strip().lower())
+            vals = {
+                "position": row["position"] if row else POSITION_NOT_FOUND,
+                "clicks": row["clicks"] if row else 0,
+                "impressions": row["impressions"] if row else 0,
+                "ctr": row["ctr"] if row else 0.0,
+                "best_page": best_page.get(
+                    keyword.name.strip().lower(), ""),
+                "last_sync": fields.Datetime.now(),
+            }
+            keyword.write(vals)
+            point_vals = {
+                "keyword_id": keyword.id,
+                "position": vals["position"],
+                "clicks": vals["clicks"],
+                "impressions": vals["impressions"],
+                "ctr": vals["ctr"],
+                "page": vals["best_page"],
+            }
+            today_point = History.search([
+                ("keyword_id", "=", keyword.id),
+                ("date", ">=", today_start)], limit=1)
+            if today_point:
+                today_point.write(point_vals)
+            else:
+                History.create(point_vals)
+
+    def action_fetch_volumes(self):
+        """Search volumes / CPC / competition for all tracked keywords
+        (DataForSEO, paid)."""
+        self.ensure_one()
+        if not self.keyword_ids:
+            raise UserError("Add keywords to track first (Keywords tab).")
+        login, password = self._dataforseo_credentials()
+        from ..dataforseo import DataForSeoError, search_volume
+        try:
+            volumes, cost = search_volume(
+                login, password, self.keyword_ids.mapped("name"),
+                location=self.dfs_location or "Belgium",
+                language=self.dfs_language or "fr")
+        except DataForSeoError as e:
+            raise UserError(str(e))
+        for keyword in self.keyword_ids:
+            data = volumes.get(keyword.name.strip().lower())
+            if data:
+                keyword.write(data)
+        return {
+            "type": "ir.actions.client",
+            "tag": "display_notification",
+            "params": {
+                "title": "Volumes updated",
+                "message": "%d keyword(s) enriched — cost $%.4f" % (
+                    len(self.keyword_ids), cost),
+                "type": "success",
+            },
+        }
 
     def action_check_indexation(self):
         """Google URL Inspection for every crawled page (quota-limited)."""
@@ -340,6 +557,17 @@ class SeoSite(models.Model):
             "view_mode": "list",
             "domain": [("site_id", "=", self.id)],
             "context": {"search_default_group_category": 1},
+        }
+
+    def action_view_history(self):
+        self.ensure_one()
+        return {
+            "type": "ir.actions.act_window",
+            "name": "Crawl history",
+            "res_model": "seo.crawl.history",
+            "view_mode": "graph,list,form",
+            "domain": [("site_id", "=", self.id)],
+            "context": {"default_site_id": self.id},
         }
 
     def _report_issue_groups(self):

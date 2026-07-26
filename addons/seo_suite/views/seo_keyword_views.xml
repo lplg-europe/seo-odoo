@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="view_seo_keyword_list" model="ir.ui.view">
+        <field name="name">seo.keyword.list</field>
+        <field name="model">seo.keyword</field>
+        <field name="arch" type="xml">
+            <list string="Tracked keywords" editable="bottom"
+                  decoration-success="position and position &lt;= 10"
+                  decoration-muted="position &gt;= 101">
+                <field name="name"/>
+                <field name="site_id"/>
+                <field name="position"/>
+                <field name="position_delta"/>
+                <field name="clicks"/>
+                <field name="impressions"/>
+                <field name="ctr" optional="hide"/>
+                <field name="volume" optional="show"/>
+                <field name="cpc" optional="hide"/>
+                <field name="competition" optional="hide"/>
+                <field name="best_page" optional="show"/>
+                <field name="our_position_serp" optional="hide"/>
+                <field name="last_sync" optional="hide"/>
+                <button name="action_view_history" type="object"
+                        icon="fa-line-chart" title="Position history"/>
+                <button name="action_analyze_serp" type="object"
+                        icon="fa-search" title="Analyze live SERP (DataForSEO, paid)"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_seo_keyword_form" model="ir.ui.view">
+        <field name="name">seo.keyword.form</field>
+        <field name="model">seo.keyword</field>
+        <field name="arch" type="xml">
+            <form string="Tracked keyword">
+                <header>
+                    <button name="action_analyze_serp" type="object"
+                            string="Analyze SERP" icon="fa-search"
+                            help="Live Google SERP snapshot via DataForSEO (paid, ~$0.001)"/>
+                    <button name="action_view_history" type="object"
+                            string="Position history" icon="fa-line-chart"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="name" placeholder="e.g. agence seo wavre"/></h1>
+                    </div>
+                    <group>
+                        <group string="Search Console (28 days)">
+                            <field name="site_id"/>
+                            <field name="position"/>
+                            <field name="position_delta"/>
+                            <field name="clicks"/>
+                            <field name="impressions"/>
+                            <field name="ctr"/>
+                            <field name="best_page" widget="url"/>
+                            <field name="last_sync"/>
+                        </group>
+                        <group string="Market (DataForSEO)">
+                            <field name="volume"/>
+                            <field name="cpc"/>
+                            <field name="competition"/>
+                            <field name="our_position_serp"/>
+                            <field name="serp_date"/>
+                        </group>
+                    </group>
+                    <group string="Live SERP snapshot" invisible="not serp_snapshot">
+                        <field name="serp_snapshot" nolabel="1"
+                               class="font-monospace"/>
+                    </group>
+                    <group string="History">
+                        <field name="history_ids" nolabel="1" readonly="1">
+                            <list>
+                                <field name="date"/>
+                                <field name="position"/>
+                                <field name="clicks"/>
+                                <field name="impressions"/>
+                                <field name="page" optional="hide"/>
+                            </list>
+                        </field>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_seo_keyword_history_graph" model="ir.ui.view">
+        <field name="name">seo.keyword.history.graph</field>
+        <field name="model">seo.keyword.history</field>
+        <field name="arch" type="xml">
+            <graph string="Position trend" type="line" sample="1">
+                <field name="date" interval="day"/>
+                <field name="position" type="measure"/>
+            </graph>
+        </field>
+    </record>
+
+    <record id="view_seo_keyword_history_list" model="ir.ui.view">
+        <field name="name">seo.keyword.history.list</field>
+        <field name="model">seo.keyword.history</field>
+        <field name="arch" type="xml">
+            <list string="Keyword history" create="false">
+                <field name="date"/>
+                <field name="keyword_id"/>
+                <field name="site_id" optional="hide"/>
+                <field name="position"/>
+                <field name="clicks"/>
+                <field name="impressions"/>
+                <field name="page" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="action_seo_keyword" model="ir.actions.act_window">
+        <field name="name">Keywords</field>
+        <field name="res_model">seo.keyword</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Track your target keywords</p>
+            <p>Add the queries you want to rank on. Every Google sync stores
+               the Search Console position, building a trend per keyword —
+               and DataForSEO (optional, paid) adds volumes and live SERPs.</p>
+        </field>
+    </record>
+
+    <menuitem id="menu_seo_keyword" name="Keywords"
+              parent="menu_seo_root" action="action_seo_keyword"
+              sequence="8"/>
+
+</odoo>

@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 """On-page SEO audit of a URL — backed by the pure-stdlib crawl engine."""
+from markupsafe import Markup, escape
+
 from odoo import api, fields, models
 from odoo.exceptions import UserError
 
@@ -31,7 +33,17 @@ class SeoAudit(models.Model):
     h1 = fields.Text(string="H1", readonly=True)
     h1_count = fields.Integer(string="H1 count", readonly=True)
     h2_count = fields.Integer(string="H2 count", readonly=True)
+    headings_outline = fields.Text(
+        string="Headings structure", readonly=True,
+        help="Ordered H1-H6 outline of the page.")
     word_count = fields.Integer(string="Word count", readonly=True)
+    reading_time = fields.Integer(
+        string="Reading time (min)", readonly=True,
+        help="Word count at 250 words per minute.")
+    redirect_chain = fields.Char(string="Redirect chain", readonly=True)
+    google_preview = fields.Html(
+        string="Google preview", compute="_compute_google_preview",
+        sanitize=False)
     internal_links = fields.Integer(string="Internal links", readonly=True)
     external_links = fields.Integer(string="External links", readonly=True)
     images = fields.Integer(string="Images", readonly=True)
@@ -77,6 +89,19 @@ class SeoAudit(models.Model):
     psi_lcp = fields.Char(string="LCP (mobile)", readonly=True)
     psi_cls = fields.Char(string="CLS (mobile)", readonly=True)
     psi_tbt = fields.Char(string="TBT (mobile)", readonly=True)
+    psi_fcp = fields.Char(string="FCP (mobile)", readonly=True)
+    psi_speed_index = fields.Char(string="Speed Index (mobile)", readonly=True)
+    psi_dom_size = fields.Integer(
+        string="DOM elements", readonly=True,
+        help="Number of DOM elements (Lighthouse, mobile).")
+    psi_total_weight_kb = fields.Integer(
+        string="Total weight (KB)", readonly=True,
+        help="Total network payload of the page (Lighthouse, mobile).")
+    psi_render_blocking = fields.Integer(
+        string="Render-blocking resources", readonly=True)
+    psi_long_tasks = fields.Integer(
+        string="Long tasks", readonly=True,
+        help="Main-thread tasks over 50ms (Lighthouse, mobile).")
     gsc_clicks = fields.Integer(string="Clicks (28d)", readonly=True)
     gsc_impressions = fields.Integer(string="Impressions (28d)", readonly=True)
     gsc_ctr = fields.Float(string="CTR (%)", digits=(6, 2), readonly=True)
@@ -105,6 +130,31 @@ class SeoAudit(models.Model):
     critical_count = fields.Integer(string="Critical", readonly=True)
     warning_count = fields.Integer(string="Warnings", readonly=True)
     info_count = fields.Integer(string="Info", readonly=True)
+
+    @api.depends("title", "final_url", "meta_description")
+    def _compute_google_preview(self):
+        """Approximate Google snippet rendering (title/URL/description)."""
+        for rec in self:
+            if not rec.audit_date:
+                rec.google_preview = False
+                continue
+            title = escape(
+                (rec.title or "(no title)")[:60]
+                + ("…" if rec.title_length > 60 else ""))
+            url = escape(rec.final_url or rec.name or "")
+            desc = escape(
+                (rec.meta_description or "(no meta description)")[:160]
+                + ("…" if rec.meta_description_length > 160 else ""))
+            rec.google_preview = Markup(
+                '<div style="max-width:600px;font-family:arial,sans-serif;'
+                'padding:12px;border:1px solid #dfe1e5;border-radius:8px;">'
+                '<div style="color:#202124;font-size:12px;'
+                'margin-bottom:2px;">%s</div>'
+                '<div style="color:#1a0dab;font-size:20px;'
+                'line-height:1.3;">%s</div>'
+                '<div style="color:#4d5156;font-size:14px;'
+                'line-height:1.57;">%s</div></div>'
+            ) % (url, title, desc)
 
     def action_run_audit(self):
         for rec in self:
@@ -135,6 +185,12 @@ class SeoAudit(models.Model):
             "psi_lcp": mobile["lcp"],
             "psi_cls": mobile["cls"],
             "psi_tbt": mobile["tbt"],
+            "psi_fcp": mobile["fcp"],
+            "psi_speed_index": mobile["speed_index"],
+            "psi_dom_size": mobile["dom_size"],
+            "psi_total_weight_kb": mobile["total_weight_kb"],
+            "psi_render_blocking": mobile["render_blocking"],
+            "psi_long_tasks": mobile["long_tasks"],
             "psi_perf_desktop": desktop["performance"],
             "psi_seo_desktop": desktop["seo"],
             "psi_a11y_desktop": desktop["accessibility"],
@@ -176,6 +232,11 @@ class SeoAudit(models.Model):
             "h1": "\n".join(page["h1"]),
             "h1_count": len(page["h1"]),
             "h2_count": page["h2_count"],
+            "headings_outline": "\n".join(
+                "%sH%d — %s" % ("    " * (level - 1), level, text)
+                for level, text in page["headings"][:100]),
+            "reading_time": page["reading_time"],
+            "redirect_chain": " ".join(page["redirect_chain"])[:512],
             "word_count": page["word_count"],
             "internal_links": page["internal_links"],
             "external_links": page["external_links"],

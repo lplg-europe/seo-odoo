@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="view_seo_crawl_history_graph" model="ir.ui.view">
+        <field name="name">seo.crawl.history.graph</field>
+        <field name="model">seo.crawl.history</field>
+        <field name="arch" type="xml">
+            <graph string="Score trend" type="line" sample="1">
+                <field name="date" interval="day"/>
+                <field name="score" type="measure"/>
+            </graph>
+        </field>
+    </record>
+
+    <record id="view_seo_crawl_history_list" model="ir.ui.view">
+        <field name="name">seo.crawl.history.list</field>
+        <field name="model">seo.crawl.history</field>
+        <field name="arch" type="xml">
+            <list string="Crawl history" create="false"
+                  decoration-success="score_delta &gt; 0"
+                  decoration-danger="score_delta &lt; 0">
+                <field name="date"/>
+                <field name="site_id" optional="hide"/>
+                <field name="score"/>
+                <field name="score_delta"/>
+                <field name="page_count"/>
+                <field name="issue_count"/>
+                <field name="new_issue_count"/>
+                <field name="resolved_issue_count"/>
+                <field name="new_page_count" optional="show"/>
+                <field name="removed_page_count" optional="show"/>
+                <field name="error_page_count" optional="hide"/>
+                <field name="avg_response_time" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_seo_crawl_history_search" model="ir.ui.view">
+        <field name="name">seo.crawl.history.search</field>
+        <field name="model">seo.crawl.history</field>
+        <field name="arch" type="xml">
+            <search string="Crawl history">
+                <field name="site_id"/>
+                <filter name="group_site" string="Site"
+                        context="{'group_by': 'site_id'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="view_seo_crawl_history_form" model="ir.ui.view">
+        <field name="name">seo.crawl.history.form</field>
+        <field name="model">seo.crawl.history</field>
+        <field name="arch" type="xml">
+            <form string="Crawl snapshot" create="false" edit="false">
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="site_id" readonly="1"/></h1>
+                    </div>
+                    <group>
+                        <group string="Snapshot">
+                            <field name="date"/>
+                            <field name="score"/>
+                            <field name="score_delta"/>
+                            <field name="page_count"/>
+                            <field name="issue_count"/>
+                            <field name="error_page_count"/>
+                        </group>
+                        <group string="Diff vs previous crawl">
+                            <field name="new_issue_count"/>
+                            <field name="resolved_issue_count"/>
+                            <field name="new_page_count"/>
+                            <field name="removed_page_count"/>
+                        </group>
+                    </group>
+                    <group string="New issues" invisible="not new_issues">
+                        <field name="new_issues" nolabel="1"/>
+                    </group>
+                    <group string="Resolved issues" invisible="not resolved_issues">
+                        <field name="resolved_issues" nolabel="1"/>
+                    </group>
+                    <group string="New pages" invisible="not new_pages">
+                        <field name="new_pages" nolabel="1"/>
+                    </group>
+                    <group string="Removed pages" invisible="not removed_pages">
+                        <field name="removed_pages" nolabel="1"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_seo_crawl_history" model="ir.actions.act_window">
+        <field name="name">Crawl history</field>
+        <field name="res_model">seo.crawl.history</field>
+        <field name="view_mode">graph,list,form</field>
+        <field name="context">{'search_default_group_site': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">No crawl history yet</p>
+            <p>Every crawl stores a snapshot here: score trend per site,
+               new/resolved issues, added/removed pages. Enable scheduled
+               crawls on a site to build the history automatically.</p>
+        </field>
+    </record>
+
+    <menuitem id="menu_seo_crawl_history" name="Crawl history"
+              parent="menu_seo_reports" action="action_seo_crawl_history"
+              sequence="10"/>
+
+</odoo>

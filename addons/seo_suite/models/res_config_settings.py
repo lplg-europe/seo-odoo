@@ -12,6 +12,14 @@ class ResConfigSettings(models.TransientModel):
              "it the shared anonymous quota applies (a few calls per day). "
              "Get one at https://developers.google.com/speed/docs/insights/"
              "v5/get-started")
+    seo_dataforseo_login = fields.Char(
+        string="DataForSEO API login",
+        config_parameter="seo_suite.dataforseo_login",
+        help="Paid BYO service (https://dataforseo.com) for search volumes "
+             "and live SERP snapshots. The API login is usually an email.")
+    seo_dataforseo_password = fields.Char(
+        string="DataForSEO API password",
+        config_parameter="seo_suite.dataforseo_password")
     seo_google_service_account = fields.Char(
         string="Google service account (JSON key)",
         config_parameter="seo_suite.google_service_account",

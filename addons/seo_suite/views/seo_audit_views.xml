@@ -53,13 +53,19 @@
                             <field name="response_time"/>
                             <field name="page_size_kb"/>
                             <field name="redirect_count"/>
+                            <field name="redirect_chain"
+                                   invisible="not redirect_chain"/>
                             <field name="is_https"/>
                             <field name="viewport"/>
                         </group>
                     </group>
+                    <group string="Google preview" invisible="not audit_date">
+                        <field name="google_preview" nolabel="1"/>
+                    </group>
                     <group>
                         <group string="Content">
                             <field name="word_count"/>
+                            <field name="reading_time"/>
                             <field name="h2_count"/>
                             <field name="internal_links"/>
                             <field name="external_links"/>
@@ -85,6 +91,7 @@
                         <field name="meta_description"/>
                         <field name="meta_description_length"/>
                         <field name="h1"/>
+                        <field name="headings_outline"/>
                         <field name="canonical"/>
                         <field name="meta_robots"/>
                         <field name="top_keywords"/>
@@ -121,8 +128,16 @@
                             <field name="psi_lcp"/>
                             <field name="psi_cls"/>
                             <field name="psi_tbt"/>
+                            <field name="psi_fcp"/>
+                            <field name="psi_speed_index"/>
                             <field name="psi_perf_desktop"/>
                             <field name="psi_seo_desktop"/>
+                        </group>
+                        <group>
+                            <field name="psi_dom_size"/>
+                            <field name="psi_total_weight_kb"/>
+                            <field name="psi_render_blocking"/>
+                            <field name="psi_long_tasks"/>
                         </group>
                     </group>
                     <group string="Detected issues">
@@ -156,5 +171,7 @@
               web_icon="seo_suite,static/description/icon.png" sequence="90"/>
     <menuitem id="menu_seo_audit" name="Audits"
               parent="menu_seo_root" action="action_seo_audit" sequence="10"/>
+    <menuitem id="menu_seo_reports" name="Reports"
+              parent="menu_seo_root" sequence="20"/>
 
 </odoo>
