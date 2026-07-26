@@ -13,6 +13,8 @@
                 <field name="title"/>
                 <field name="word_count"/>
                 <field name="issue_count"/>
+                <field name="score" widget="progressbar" optional="show"/>
+                <field name="site_id" optional="hide"/>
                 <field name="audit_date"/>
             </list>
         </field>
@@ -39,6 +41,9 @@
                             <field name="final_url" widget="url"/>
                             <field name="audit_date"/>
                             <field name="issue_count"/>
+                            <field name="score"/>
+                            <field name="site_id" invisible="not site_id"/>
+                            <field name="error" invisible="not error"/>
                         </group>
                         <group string="Content">
                             <field name="word_count"/>
@@ -58,7 +63,15 @@
                         <field name="meta_robots"/>
                     </group>
                     <group string="Detected issues">
-                        <field name="issues" nolabel="1"/>
+                        <field name="issue_ids" nolabel="1" readonly="1">
+                            <list decoration-danger="severity == 'critical'"
+                                  decoration-warning="severity == 'warning'"
+                                  decoration-info="severity == 'info'">
+                                <field name="severity"/>
+                                <field name="category"/>
+                                <field name="message"/>
+                            </list>
+                        </field>
                     </group>
                 </sheet>
             </form>

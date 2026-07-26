@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="view_seo_site_list" model="ir.ui.view">
+        <field name="name">seo.site.list</field>
+        <field name="model">seo.site</field>
+        <field name="arch" type="xml">
+            <list string="SEO Sites"
+                  decoration-danger="error_page_count &gt; 0"
+                  decoration-success="issue_count == 0 and page_count &gt; 0">
+                <field name="name"/>
+                <field name="page_count"/>
+                <field name="score" widget="progressbar"/>
+                <field name="issue_count"/>
+                <field name="error_page_count"/>
+                <field name="site_issue_count"/>
+                <field name="last_crawl"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_seo_site_form" model="ir.ui.view">
+        <field name="name">seo.site.form</field>
+        <field name="model">seo.site</field>
+        <field name="arch" type="xml">
+            <form string="SEO Site">
+                <header>
+                    <button name="action_crawl" type="object"
+                            string="Crawl site" class="btn-primary"
+                            icon="fa-globe"/>
+                </header>
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_view_audits" type="object"
+                                class="oe_stat_button" icon="fa-files-o"
+                                invisible="page_count == 0">
+                            <field name="page_count" widget="statinfo"
+                                   string="Pages"/>
+                        </button>
+                        <button name="action_view_issues" type="object"
+                                class="oe_stat_button" icon="fa-exclamation-triangle"
+                                invisible="page_count == 0">
+                            <field name="issue_count" widget="statinfo"
+                                   string="Issues"/>
+                        </button>
+                        <button name="action_view_issues" type="object"
+                                class="oe_stat_button" icon="fa-exclamation-circle"
+                                invisible="critical_count == 0">
+                            <field name="critical_count" widget="statinfo"
+                                   string="Critical"/>
+                        </button>
+                    </div>
+                    <div class="oe_title">
+                        <label for="name" string="Site URL"/>
+                        <h1><field name="name" placeholder="https://example.com"/></h1>
+                    </div>
+                    <group>
+                        <group string="Crawl options">
+                            <field name="max_pages"/>
+                            <field name="use_sitemap"/>
+                            <field name="follow_links"/>
+                        </group>
+                        <group string="Result">
+                            <field name="last_crawl"/>
+                            <field name="discovered_count"/>
+                            <field name="error_page_count"/>
+                            <field name="score"/>
+                            <field name="critical_count"/>
+                            <field name="warning_count"/>
+                            <field name="info_count"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Pages" name="pages">
+                            <field name="audit_ids" readonly="1">
+                                <list decoration-danger="error or status_code &gt;= 400"
+                                      decoration-warning="issue_count &gt; 2">
+                                    <field name="name"/>
+                                    <field name="status_code"/>
+                                    <field name="title" optional="show"/>
+                                    <field name="word_count" optional="show"/>
+                                    <field name="issue_count"/>
+                                    <field name="score" widget="progressbar"/>
+                                    <field name="error" optional="hide"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Site issues" name="site_issues">
+                            <field name="site_issue_count" invisible="1"/>
+                            <field name="site_issues" nolabel="1"/>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_seo_site" model="ir.actions.act_window">
+        <field name="name">SEO Sites</field>
+        <field name="res_model">seo.site</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Crawl your first site</p>
+            <p>Enter the root URL and click "Crawl site": SEO Suite discovers the
+               pages (sitemap.xml + internal links), audits each one and reports
+               duplicate titles, broken pages and other site-level issues.</p>
+        </field>
+    </record>
+
+    <menuitem id="menu_seo_site" name="Sites"
+              parent="menu_seo_root" action="action_seo_site" sequence="5"/>
+
+</odoo>

@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="action_report_seo_site" model="ir.actions.report">
+        <field name="name">SEO Audit Report</field>
+        <field name="model">seo.site</field>
+        <field name="report_type">qweb-pdf</field>
+        <field name="report_name">seo_suite.report_seo_site</field>
+        <field name="report_file">seo_suite.report_seo_site</field>
+        <field name="binding_model_id" ref="model_seo_site"/>
+        <field name="binding_type">report</field>
+        <field name="print_report_name">'SEO Audit - %s' % (object.name)</field>
+    </record>
+
+    <template id="report_seo_site">
+        <t t-call="web.html_container">
+            <t t-foreach="docs" t-as="doc">
+                <t t-call="web.external_layout">
+                    <div class="page">
+                        <h2>SEO Audit Report</h2>
+                        <h4><a t-att-href="doc.name"><t t-out="doc.name"/></a></h4>
+                        <p>
+                            Crawled on <span t-field="doc.last_crawl"/> —
+                            <t t-out="doc.page_count"/> pages audited,
+                            <t t-out="doc.discovered_count"/> URLs discovered.
+                        </p>
+
+                        <table class="table table-sm table-bordered mt-3">
+                            <tr>
+                                <th>Overall score</th>
+                                <th>Critical</th>
+                                <th>Warnings</th>
+                                <th>Info</th>
+                                <th>Pages in error</th>
+                                <th>Site-level issues</th>
+                            </tr>
+                            <tr>
+                                <td><strong t-out="doc.score"/> / 100</td>
+                                <td t-out="doc.critical_count"/>
+                                <td t-out="doc.warning_count"/>
+                                <td t-out="doc.info_count"/>
+                                <td t-out="doc.error_page_count"/>
+                                <td t-out="doc.site_issue_count"/>
+                            </tr>
+                        </table>
+
+                        <h3 class="mt-4">Action plan</h3>
+                        <p>Detected issues grouped by work stream, most severe first.</p>
+                        <table class="table table-sm table-bordered">
+                            <thead>
+                                <tr>
+                                    <th>Work stream</th>
+                                    <th class="text-end">Issues</th>
+                                    <th class="text-end">Critical</th>
+                                    <th class="text-end">Warnings</th>
+                                    <th class="text-end">Pages affected</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr t-foreach="doc._report_issue_groups()" t-as="group">
+                                    <td t-out="group['category']"/>
+                                    <td class="text-end" t-out="group['count']"/>
+                                    <td class="text-end" t-out="group['critical']"/>
+                                    <td class="text-end" t-out="group['warning']"/>
+                                    <td class="text-end" t-out="group['page_count']"/>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        <h3 class="mt-4">Site-level issues</h3>
+                        <p style="white-space: pre-line;" t-field="doc.site_issues"/>
+
+                        <h3 class="mt-4">Page detail</h3>
+                        <table class="table table-sm table-bordered">
+                            <thead>
+                                <tr>
+                                    <th>URL</th>
+                                    <th class="text-end">HTTP</th>
+                                    <th class="text-end">Score</th>
+                                    <th>Issues</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr t-foreach="doc.audit_ids.sorted(key=lambda a: a.score)" t-as="audit">
+                                    <td style="word-break: break-all;" t-out="audit.name"/>
+                                    <td class="text-end" t-out="audit.status_code"/>
+                                    <td class="text-end" t-out="audit.score"/>
+                                    <td style="white-space: pre-line;" t-out="audit.issues"/>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </t>
+            </t>
+        </t>
+    </template>
+
+</odoo>

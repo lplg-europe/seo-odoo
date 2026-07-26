@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="view_seo_audit_issue_list" model="ir.ui.view">
+        <field name="name">seo.audit.issue.list</field>
+        <field name="model">seo.audit.issue</field>
+        <field name="arch" type="xml">
+            <list string="SEO Issues"
+                  decoration-danger="severity == 'critical'"
+                  decoration-warning="severity == 'warning'"
+                  decoration-info="severity == 'info'">
+                <field name="url"/>
+                <field name="category"/>
+                <field name="severity"/>
+                <field name="message"/>
+                <field name="site_id" optional="show"/>
+                <field name="audit_id" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_seo_audit_issue_search" model="ir.ui.view">
+        <field name="name">seo.audit.issue.search</field>
+        <field name="model">seo.audit.issue</field>
+        <field name="arch" type="xml">
+            <search string="SEO Issues">
+                <field name="url"/>
+                <field name="message"/>
+                <field name="site_id"/>
+                <filter name="filter_critical" string="Critical"
+                        domain="[('severity', '=', 'critical')]"/>
+                <filter name="filter_warning" string="Warnings"
+                        domain="[('severity', '=', 'warning')]"/>
+                <filter name="filter_info" string="Info"
+                        domain="[('severity', '=', 'info')]"/>
+                <group expand="0" string="Group By">
+                    <filter name="group_category" string="Category"
+                            context="{'group_by': 'category'}"/>
+                    <filter name="group_severity" string="Severity"
+                            context="{'group_by': 'severity'}"/>
+                    <filter name="group_site" string="Site"
+                            context="{'group_by': 'site_id'}"/>
+                    <filter name="group_url" string="Page"
+                            context="{'group_by': 'audit_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_seo_audit_issue" model="ir.actions.act_window">
+        <field name="name">SEO Issues</field>
+        <field name="res_model">seo.audit.issue</field>
+        <field name="view_mode">list</field>
+        <field name="context">{'search_default_group_category': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">No issues yet</p>
+            <p>Crawl a site (SEO → Sites) or run a page audit: every detected
+               issue lands here, grouped by category and severity — ready to
+               turn into an action plan.</p>
+        </field>
+    </record>
+
+    <menuitem id="menu_seo_issue" name="Issues"
+              parent="menu_seo_root" action="action_seo_audit_issue"
+              sequence="7"/>
+
+</odoo>
