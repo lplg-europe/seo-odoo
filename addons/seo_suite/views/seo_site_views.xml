@@ -169,6 +169,34 @@
                             <field name="site_issue_count" invisible="1"/>
                             <field name="site_issues" nolabel="1"/>
                         </page>
+                        <page string="Competitors" name="competitors">
+                            <div class="alert alert-info" role="alert">
+                                Link the competitors you want to be compared to.
+                                They are regular SEO sites: create them, crawl them,
+                                and the audit report gains a "Competitive benchmark"
+                                section ranking this site against them on score,
+                                content depth, technical health, backlinks and AI
+                                visibility.
+                            </div>
+                            <button name="action_crawl_competitors" type="object"
+                                    string="Re-crawl all competitors"
+                                    icon="fa-refresh" class="btn-secondary mb-2"
+                                    invisible="competitor_count == 0"/>
+                            <field name="competitor_count" invisible="1"/>
+                            <field name="competitor_ids" nolabel="1"
+                                   domain="[('id', '!=', id)]">
+                                <list>
+                                    <field name="name"/>
+                                    <field name="page_count"/>
+                                    <field name="score" widget="progressbar"/>
+                                    <field name="issue_count"/>
+                                    <field name="avg_word_count" optional="show"/>
+                                    <field name="bl_rank" optional="hide"/>
+                                    <field name="ai_visibility_pct" optional="hide"/>
+                                    <field name="last_crawl"/>
+                                </list>
+                            </field>
+                        </page>
                         <page string="Keywords" name="keywords">
                             <button name="action_fetch_volumes" type="object"
                                     string="Fetch volumes (DataForSEO)"

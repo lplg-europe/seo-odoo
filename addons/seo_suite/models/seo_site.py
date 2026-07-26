@@ -73,6 +73,14 @@ class SeoSite(models.Model):
         compute="_compute_history_count", string="Crawls")
     keyword_ids = fields.One2many(
         "seo.keyword", "site_id", string="Tracked keywords")
+    competitor_ids = fields.Many2many(
+        "seo.site", "seo_site_competitor_rel", "site_id", "competitor_id",
+        string="Competitors",
+        help="Other sites (crawled the same way) this one is benchmarked "
+             "against in the audit report: score, content depth, technical "
+             "health, backlinks and AI visibility side by side.")
+    competitor_count = fields.Integer(
+        compute="_compute_competitor_count", string="Competitors")
     keyword_count = fields.Integer(
         compute="_compute_keyword_count", string="Keywords")
     dfs_location = fields.Char(
@@ -162,6 +170,11 @@ class SeoSite(models.Model):
     def _compute_keyword_count(self):
         for rec in self:
             rec.keyword_count = len(rec.keyword_ids)
+
+    @api.depends("competitor_ids")
+    def _compute_competitor_count(self):
+        for rec in self:
+            rec.competitor_count = len(rec.competitor_ids)
 
     def _bare_host(self):
         self.ensure_one()
@@ -948,11 +961,25 @@ class SeoSite(models.Model):
 
     def _report_path(self, url):
         """Short path of a page URL for the printed report — the domain is
-        already in the report header, repeating it 50 times is noise."""
-        base = (self.name or "").rstrip("/")
-        if base and url.startswith(base):
-            return url[len(base):] or "/"
-        return url
+        already in the report header, repeating it 50 times is noise.
+
+        Works off urlsplit rather than a prefix match: a site declared as
+        https://example.com is very often crawled as https://www.example.com
+        (or the other way round), and a plain startswith would then leave
+        the full URL in every row."""
+        if not url:
+            return ""
+        parts = urlsplit(url)
+        if not parts.netloc:
+            return url
+        path = parts.path or "/"
+        if parts.query:
+            path += "?" + parts.query
+        # keep the host when the page is off-domain (rare but possible)
+        if self._bare_host() and parts.netloc.lower().replace(
+                "www.", "") != self._bare_host():
+            return parts.netloc + path
+        return path
 
     def _report_top_issues(self, limit=12):
         """Recurring issues across the whole site, worst first — the
@@ -1017,6 +1044,26 @@ class SeoSite(models.Model):
         return [self._report_path(a.name) for a in self.audit_ids.sorted("name")
                 if not a.issue_ids and not a.error and a.status_code < 400]
 
+    def _report_site_issue_lines(self):
+        """Site-level issues split into a label and its (shortened) URLs —
+        the raw text blob wraps into an unreadable wall in a PDF."""
+        self.ensure_one()
+        lines = []
+        for raw in (self.site_issues or "").splitlines():
+            raw = raw.strip()
+            if not raw:
+                continue
+            at = raw.find("http")
+            if at <= 0:
+                lines.append({"label": raw, "urls": ""})
+                continue
+            urls = [self._report_path(part)
+                    for part in re.split(r"[,\s]+", raw[at:])
+                    if part.startswith("http")]
+            lines.append({"label": raw[:at].rstrip(" :,-—"),
+                          "urls": " · ".join(urls)})
+        return lines
+
     def _report_keyword_buckets(self):
         """Tracked keywords grouped by opportunity level for the complete
         report — where to push first."""
@@ -1044,6 +1091,96 @@ class SeoSite(models.Model):
                     if k.best_page else "",
                 } for k in keywords]})
         return result
+
+    # metric label, field, lower_is_better, formatter
+    _BENCHMARK_METRICS = [
+        ("Overall SEO score", "score", False, "%d/100"),
+        ("Pages crawled", "page_count", False, "%d"),
+        ("Avg words per page", "avg_word_count", False, "%d"),
+        ("Issues per page", "_issues_per_page", True, "%.1f"),
+        ("Indexable pages", "indexable_pct", False, "%d%%"),
+        ("HTTPS", "https_pct", False, "%d%%"),
+        ("Mobile-friendly", "mobile_pct", False, "%d%%"),
+        ("Structured data", "schema_pct", False, "%d%%"),
+        ("Avg response time", "avg_response_time", True, "%.2fs"),
+        ("Domain rank", "bl_rank", False, "%d"),
+        ("Referring domains", "bl_referring_domains", False, "%d"),
+        ("AI visibility", "ai_visibility_pct", False, "%d%%"),
+    ]
+
+    def _benchmark_value(self, field):
+        self.ensure_one()
+        if field == "_issues_per_page":
+            return (float(self.issue_count) / self.page_count
+                    if self.page_count else 0.0)
+        return self[field]
+
+    def action_crawl_competitors(self):
+        """Crawl every linked competitor so the benchmark is up to date."""
+        self.ensure_one()
+        competitors = self.competitor_ids
+        if not competitors:
+            raise UserError(
+                "No competitor linked yet. Add the competitors' sites in the "
+                "Competitors tab (they are regular SEO sites: crawl them and "
+                "the audit report will compare you to them).")
+        for competitor in competitors:
+            competitor.action_crawl()
+        return {
+            "type": "ir.actions.client",
+            "tag": "display_notification",
+            "params": {
+                "type": "success",
+                "message": "%d competitor site(s) re-crawled." % len(
+                    competitors),
+                "next": {"type": "ir.actions.act_window_close"},
+            },
+        }
+
+    def _report_benchmark(self, limit=4):
+        """Us vs the competitors, metric by metric — the section that turns
+        an audit into a competitive positioning.
+
+        Only competitors that have actually been crawled are included: an
+        empty site would fake a win on every row."""
+        self.ensure_one()
+        competitors = self.competitor_ids.filtered(
+            lambda c: c.page_count and c.id != self.id)[:limit]
+        if not competitors:
+            return {}
+        rows, wins = [], 0
+        for label, field, lower_better, fmt in self._BENCHMARK_METRICS:
+            ours = self._benchmark_value(field)
+            theirs = [c._benchmark_value(field) for c in competitors]
+            # skip metrics nobody measured (e.g. backlinks without an API key)
+            if not ours and not any(theirs):
+                continue
+            values = [ours] + theirs
+            best = min(values) if lower_better else max(values)
+            contested = len(set(values)) > 1  # nobody "wins" a tie
+            we_win = contested and ours == best
+            if we_win:
+                wins += 1
+            rows.append({
+                "label": label,
+                "ours": fmt % ours,
+                "we_win": we_win,
+                "theirs": [{"value": fmt % value,
+                            "best": contested and value == best}
+                           for value in theirs],
+            })
+        scores = sorted([self.score] + [c.score for c in competitors],
+                        reverse=True)
+        return {
+            "competitors": [{
+                "name": c._bare_host() or c.name, "score": c.score,
+            } for c in competitors],
+            "rows": rows,
+            "wins": wins,
+            "total": len(rows),
+            "rank": scores.index(self.score) + 1,
+            "field_size": len(competitors) + 1,
+        }
 
     def _report_ai_meta_rows(self, limit=15):
         """Stored AI title/meta suggestions not applied yet — the

@@ -154,6 +154,8 @@
                 .seo .bucket-label { font-weight:bold; font-size:10pt; margin:10px 0 2px; page-break-after:avoid; }
                 .seo .bucket-advice { color:#6B7280; font-size:8.5pt; margin:0 0 5px; page-break-after:avoid; }
                 .seo .ai-meta { font-size:8pt; }
+                .seo .bench-win { color:#0F6E56; font-weight:bold; }
+                .seo .stale { background:#FAEEDA; border-radius:5px; padding:6px 10px; margin:6px 0; font-size:8.5pt; color:#854F0B; }
                 .seo .site-line-label { font-weight:bold; }
                 .seo .site-line-urls { color:#6B7280; font-family:monospace; font-size:7.5pt; word-break:break-all; padding-top:1px; }
                 .seo .kw { font-weight:bold; }
@@ -282,6 +284,10 @@
                     <div class="section">
                         Top issues to fix<t t-if="full"> — our recommendations</t>
                     </div>
+                    <div t-if="full and not any(ti.get('how_to_fix') for ti in top_issues)" class="stale">
+                        This crawl predates the recommendation engine, so the how-to-fix
+                        guidance is missing below. Re-crawl the site to fill it in.
+                    </div>
                     <table class="lines">
                         <thead>
                             <tr>
@@ -304,6 +310,41 @@
                             </t>
                         </tbody>
                     </table>
+                </t>
+
+                <!-- Competitive benchmark -->
+                <t t-set="bench" t-value="doc._report_benchmark()"/>
+                <t t-if="bench">
+                    <div class="section">
+                        Competitive benchmark — rank <t t-out="bench['rank']"/> of <t t-out="bench['field_size']"/>
+                    </div>
+                    <div class="bucket-advice">
+                        Same crawl, same metrics, run on each site.
+                        This site leads on <t t-out="bench['wins']"/> of <t t-out="bench['total']"/> measured criteria.
+                    </div>
+                    <table class="lines">
+                        <thead>
+                            <tr>
+                                <th>Metric</th>
+                                <th class="num" style="width:14%;">This site</th>
+                                <t t-foreach="bench['competitors']" t-as="comp">
+                                    <th class="num"><t t-out="comp['name']"/></th>
+                                </t>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <t t-foreach="bench['rows']" t-as="brow">
+                                <tr style="page-break-inside:avoid;">
+                                    <td style="font-weight:bold;"><t t-out="brow['label']"/></td>
+                                    <td t-attf-class="num {{'bench-win' if brow['we_win'] else ''}}"><t t-out="brow['ours']"/></td>
+                                    <t t-foreach="brow['theirs']" t-as="cell">
+                                        <td t-attf-class="num {{'bench-win' if cell['best'] else ''}}"><t t-out="cell['value']"/></td>
+                                    </t>
+                                </tr>
+                            </t>
+                        </tbody>
+                    </table>
+                    <div class="capnote">Best value of each row in green. Backlink and AI-visibility rows appear only for the sites where those scans were run.</div>
                 </t>
 
                 <!-- Action plan by work stream -->
@@ -392,17 +433,16 @@
                 </t>
 
                 <!-- Site-level issues -->
-                <t t-set="site_lines" t-value="[l.strip() for l in (doc.site_issues or '').splitlines() if l.strip()]"/>
+                <t t-set="site_lines" t-value="doc._report_site_issue_lines()"/>
                 <t t-if="site_lines">
                     <div class="section">Site-level issues (<t t-out="len(site_lines)"/>)</div>
                     <table class="lines">
                         <tbody>
                             <t t-foreach="site_lines" t-as="sline">
-                                <t t-set="split_at" t-value="sline.find('http')"/>
                                 <tr style="page-break-inside:avoid;">
                                     <td>
-                                        <div class="site-line-label"><t t-out="sline[:split_at].rstrip(' :,') if split_at &gt; 0 else sline"/></div>
-                                        <div t-if="split_at &gt; 0" class="site-line-urls"><t t-out="sline[split_at:]"/></div>
+                                        <div class="site-line-label"><t t-out="sline['label']"/></div>
+                                        <div t-if="sline['urls']" class="site-line-urls"><t t-out="sline['urls']"/></div>
                                     </td>
                                 </tr>
                             </t>
