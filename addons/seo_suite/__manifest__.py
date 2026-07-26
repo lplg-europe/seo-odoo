@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     "name": "SEO Suite",
-    "version": "19.0.1.8.1",
+    "version": "19.0.1.10.0",
     "summary": "SEO suite for Odoo: on-page, technical and content audit.",
     "description": """
 SEO Suite
@@ -50,8 +50,10 @@ Integrations:
   position — trend graph per keyword
 - DataForSEO (BYO paid key): monthly search volumes / CPC / competition
   and live SERP snapshots (the legal alternative to scraping Google)
-
-Coming next: keyword research, AI recommendations, scheduled crawls.
+- AI recommendations (BYO Claude or Gemini key): title/meta/H1 writing,
+  bulk missing-meta suggestions, heading rewrites, JSON-LD generation —
+  suggestions are stored for human validation, never auto-published
+- MCP server (mcp/server.py): expose the same audits to AI assistants
 """,
     "category": "Website/SEO",
     "author": "LPLG",

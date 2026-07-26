@@ -72,6 +72,10 @@
                             <field name="removed_page_count"/>
                         </group>
                     </group>
+                    <group string="Crawl-to-crawl comparison">
+                        <field name="comparison" nolabel="1"
+                               class="font-monospace"/>
+                    </group>
                     <group string="New issues" invisible="not new_issues">
                         <field name="new_issues" nolabel="1"/>
                     </group>

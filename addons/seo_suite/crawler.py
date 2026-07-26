@@ -498,7 +498,7 @@ def fetch_page(url, timeout=15):
         "og": "missing", "hreflangs": [], "schema_types": [], "schema_count": 0,
         "mixed_content": 0, "unsafe_blank_links": 0,
         "text_ratio": 0, "flesch_score": None, "flesch_label": "",
-        "top_keywords": [], "link_score": 0,
+        "top_keywords": [], "link_score": 0, "text_excerpt": "",
     }
     if f["is_html"] and f["body"] and not f["error"] and 0 < f["status"] < 400:
         parser = SeoPageParser()
@@ -507,6 +507,7 @@ def fetch_page(url, timeout=15):
         except Exception:  # noqa: BLE001 — badly broken HTML
             pass
         text = " ".join(parser.text_parts)
+        page["text_excerpt"] = text[:8000]
         flesch, flesch_label = flesch_reading_ease(text)
         page.update({
             "title": (parser.title or "").strip(),

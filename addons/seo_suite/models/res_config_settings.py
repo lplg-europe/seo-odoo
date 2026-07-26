@@ -20,6 +20,23 @@ class ResConfigSettings(models.TransientModel):
     seo_dataforseo_password = fields.Char(
         string="DataForSEO API password",
         config_parameter="seo_suite.dataforseo_password")
+    seo_ai_provider = fields.Selection(
+        [("claude", "Claude (Anthropic)"), ("gemini", "Google Gemini")],
+        string="AI provider", default="claude",
+        config_parameter="seo_suite.ai_provider")
+    seo_anthropic_api_key = fields.Char(
+        string="Anthropic API key",
+        config_parameter="seo_suite.anthropic_api_key",
+        help="BYO key from https://platform.claude.com — used for AI title/"
+             "meta suggestions, heading rewrites and JSON-LD generation.")
+    seo_gemini_api_key = fields.Char(
+        string="Gemini API key",
+        config_parameter="seo_suite.gemini_api_key",
+        help="BYO key from Google AI Studio.")
+    seo_ai_model = fields.Char(
+        string="AI model override",
+        config_parameter="seo_suite.ai_model",
+        help="Optional. Defaults: claude-opus-4-8 / gemini-2.5-flash.")
     seo_google_service_account = fields.Char(
         string="Google service account (JSON key)",
         config_parameter="seo_suite.google_service_account",

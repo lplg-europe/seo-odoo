@@ -28,6 +28,7 @@ Console, keywords and AI recommendations planned.
 | Keyword tracking | ✅ | Declare target queries; every sync stores the GSC position → trend per keyword |
 | SERP & volumes | ✅ | DataForSEO (BYO paid key): monthly volumes/CPC/competition + live SERP snapshots with competitor list |
 | Quick audit | ✅ | One-click wizard: paste a prospect URL → crawl → printable report (built for "free SEO audit" offers) |
+| AI recommendations | ✅ | BYO Claude/Gemini key: title/meta/H1 writing (single + bulk missing-metas), heading rewrites, JSON-LD generation — human validates, never auto-published |
 
 The crawl engine ([crawler.py](addons/seo_suite/crawler.py)) is pure Python
 stdlib with **no Odoo dependency** — it can be reused standalone (scripts, CI,
@@ -36,8 +37,20 @@ other projects) or swapped into another frontend.
 The crawl engine stays dependency-free; Google integrations sign their
 service-account JWT with `cryptography`, which ships with standard Odoo.
 
+## MCP server (AI assistants)
+
+[mcp/server.py](mcp/server.py) exposes the same crawl engine to AI
+assistants over the Model Context Protocol (stdio, pure stdlib — no pip
+install). Tools: `audit_page`, `crawl_site`, `check_url`. Register it in a
+`.mcp.json` (one ships at the repo root) and Claude can audit any site
+with exactly the same rules as the Odoo module:
+
+```json
+{"mcpServers": {"seo-suite": {"command": "python",
+                              "args": ["mcp/server.py"]}}}
+```
+
 ### Roadmap
-- AI recommendations (Claude / Gemini)
 - Backlinks & domain overview (DataForSEO)
 - Server log analyzer (bots, LLM crawlers)
 - Odoo Website helpers: sitemap, robots, schema, redirects

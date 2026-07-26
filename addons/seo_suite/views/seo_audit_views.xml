@@ -32,6 +32,16 @@
                     <button name="action_run_pagespeed" type="object"
                             string="Run PageSpeed" icon="fa-tachometer"
                             help="Google PageSpeed Insights (mobile + desktop). Takes ~30-60s."/>
+                    <button name="action_ai_suggest_meta" type="object"
+                            string="AI: title &amp; meta" icon="fa-magic"
+                            invisible="not audit_date"
+                            help="AI-written title, meta description, H1, target keyword and content topic (BYO key, SEO → Configuration)."/>
+                    <button name="action_ai_improve_headings" type="object"
+                            string="AI: headings" icon="fa-magic"
+                            invisible="not headings_outline"/>
+                    <button name="action_ai_generate_jsonld" type="object"
+                            string="AI: JSON-LD" icon="fa-magic"
+                            invisible="not audit_date"/>
                 </header>
                 <sheet>
                     <div class="oe_title">
@@ -113,6 +123,20 @@
                             <field name="index_state"/>
                             <field name="google_canonical"/>
                             <field name="google_last_crawl"/>
+                        </group>
+                    </group>
+                    <group string="AI suggestions" invisible="not ai_date">
+                        <group>
+                            <field name="ai_title"/>
+                            <field name="ai_meta_description"/>
+                            <field name="ai_h1"/>
+                            <field name="ai_keyword"/>
+                            <field name="ai_topic"/>
+                            <field name="ai_date"/>
+                        </group>
+                        <group>
+                            <field name="ai_headings"/>
+                            <field name="ai_jsonld"/>
                         </group>
                     </group>
                     <group string="PageSpeed Insights (Google)"

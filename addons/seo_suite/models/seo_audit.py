@@ -123,6 +123,17 @@ class SeoAudit(models.Model):
     ga_users = fields.Integer(string="Users (28d)", readonly=True)
     ga_engagement = fields.Float(
         string="Engagement (%)", digits=(6, 1), readonly=True)
+    ai_title = fields.Char(string="AI title", readonly=True)
+    ai_meta_description = fields.Text(
+        string="AI meta description", readonly=True)
+    ai_h1 = fields.Char(string="AI H1", readonly=True)
+    ai_keyword = fields.Char(string="AI target keyword", readonly=True)
+    ai_topic = fields.Char(
+        string="AI content topic", readonly=True,
+        help="Complementary content idea to strengthen this page.")
+    ai_headings = fields.Text(string="AI improved headings", readonly=True)
+    ai_jsonld = fields.Text(string="AI JSON-LD", readonly=True)
+    ai_date = fields.Datetime(string="AI suggestions on", readonly=True)
     issues = fields.Text(string="Detected issues", readonly=True)
     issue_count = fields.Integer(string="Issue count", readonly=True)
     issue_ids = fields.One2many(
@@ -159,6 +170,134 @@ class SeoAudit(models.Model):
     def action_run_audit(self):
         for rec in self:
             rec._run_audit()
+        return True
+
+    @api.model
+    def _ai_complete(self, prompt, system=None, max_tokens=2048):
+        """Run one completion on the configured AI provider (BYO key)."""
+        get_param = self.env["ir.config_parameter"].sudo().get_param
+        provider = get_param("seo_suite.ai_provider") or "claude"
+        key_param = ("seo_suite.anthropic_api_key" if provider == "claude"
+                     else "seo_suite.gemini_api_key")
+        api_key = get_param(key_param)
+        if not api_key:
+            raise UserError(
+                "No %s API key configured. Add it in SEO → Configuration "
+                "→ Settings (AI recommendations)."
+                % ("Anthropic" if provider == "claude" else "Gemini"))
+        from ..ai_client import AiError, complete
+        try:
+            return complete(
+                provider, api_key, prompt,
+                system=system,
+                model=get_param("seo_suite.ai_model"),
+                max_tokens=max_tokens)
+        except AiError as e:
+            raise UserError(str(e))
+
+    AI_SYSTEM = ("You are an expert SEO copywriter and technical SEO "
+                 "consultant. You write precise, natural copy that ranks "
+                 "well without keyword stuffing.")
+
+    def _ai_page_context(self, with_text=True):
+        """Fresh page data for AI prompts (re-fetches for current content)."""
+        self.ensure_one()
+        url = (self.final_url or self.name or "").strip()
+        lang = self.lang or "the page's language"
+        text = ""
+        if with_text:
+            page = fetch_page(url)
+            text = page["text_excerpt"] or ""
+        return url, lang, text
+
+    def action_ai_suggest_meta(self):
+        """AI-written title / meta description / H1 + keyword and topic."""
+        self.ensure_one()
+        url, lang, text = self._ai_page_context()
+        prompt = (
+            "Page URL: %s\n"
+            "Current title: %s\n"
+            "Current meta description: %s\n"
+            "Page language: %s\n"
+            "Page content (excerpt):\n%s\n\n"
+            "Based on this page, produce:\n"
+            '- "title": an SEO title of 50-60 characters including the main '
+            "keyword naturally\n"
+            '- "meta_description": 140-160 characters, compelling, includes '
+            "the keyword, makes people want to click\n"
+            '- "h1": one clear H1 for the page\n'
+            '- "keyword": the main target keyword of this page\n'
+            '- "topic": one complementary content topic that would '
+            "strengthen this page's ranking\n\n"
+            "Write title, meta_description and h1 in %s.\n"
+            "Respond with ONLY a JSON object with keys title, "
+            "meta_description, h1, keyword, topic."
+            % (url, self.title or "(none)",
+               self.meta_description or "(none)", lang, text, lang))
+        from ..ai_client import AiError, extract_json
+        response = self._ai_complete(prompt, system=self.AI_SYSTEM)
+        try:
+            data = extract_json(response)
+        except AiError as e:
+            raise UserError(str(e))
+        self.write({
+            "ai_title": (data.get("title") or "")[:256],
+            "ai_meta_description": data.get("meta_description") or "",
+            "ai_h1": (data.get("h1") or "")[:256],
+            "ai_keyword": (data.get("keyword") or "")[:256],
+            "ai_topic": (data.get("topic") or "")[:256],
+            "ai_date": fields.Datetime.now(),
+        })
+        return True
+
+    def action_ai_improve_headings(self):
+        """AI rewrite of the page's heading structure."""
+        self.ensure_one()
+        if not self.headings_outline:
+            raise UserError("Run the audit first (no headings captured).")
+        url, lang, _ = self._ai_page_context(with_text=False)
+        prompt = (
+            "Page URL: %s\nPage title: %s\nPage language: %s\n\n"
+            "Improve these headings for better Google ranking using current "
+            "SEO best practices: use keywords wisely, differentiate "
+            "duplicated headings while keeping their meaning, keep the "
+            "hierarchy sensible (one H1, no level skips), and keep the "
+            "page's language.\n\nHeadings:\n%s\n\n"
+            "Output ONLY the improved headings, one per line, keeping the "
+            '"H<level> — text" format.'
+            % (url, self.title or "(none)", lang, self.headings_outline))
+        self.write({
+            "ai_headings": self._ai_complete(
+                prompt, system=self.AI_SYSTEM).strip(),
+            "ai_date": fields.Datetime.now(),
+        })
+        return True
+
+    def action_ai_generate_jsonld(self):
+        """AI-generated (or improved) schema.org JSON-LD for the page."""
+        self.ensure_one()
+        url, lang, text = self._ai_page_context()
+        existing = ("Existing schema.org types on the page: %s.\nImprove or "
+                    "complete the structured data." % self.schema_types
+                    if self.schema_types else
+                    "The page has no structured data yet. Generate the most "
+                    "appropriate schema.org JSON-LD.")
+        prompt = (
+            "Page URL: %s\nPage title: %s\nMeta description: %s\nH1: %s\n"
+            "Page language: %s\n%s\n"
+            "Page content (excerpt):\n%s\n\n"
+            "Output the JSON-LD object first (raw JSON, no markdown "
+            'fences, ready to paste inside <script type="application/'
+            'ld+json">), then a line containing only "---", then 2-3 '
+            "sentences explaining your choices."
+            % (url, self.title or "(none)",
+               self.meta_description or "(none)", self.h1 or "(none)",
+               lang, existing, text[:4000]))
+        self.write({
+            "ai_jsonld": self._ai_complete(
+                prompt, system=self.AI_SYSTEM, max_tokens=3000).strip(),
+            "ai_date": fields.Datetime.now(),
+        })
         return True
 
     def action_run_pagespeed(self):

@@ -36,6 +36,10 @@
                             string="Check indexation" icon="fa-check-square-o"
                             invisible="page_count == 0"
                             help="Google URL Inspection per page: is it really indexed? Takes ~1-2s per page (max 50)."/>
+                    <button name="action_ai_suggest_missing_metas" type="object"
+                            string="AI: missing metas" icon="fa-magic"
+                            invisible="page_count == 0"
+                            help="AI title/meta suggestions for every crawled page missing a meta description (8 pages per click, BYO key)."/>
                 </header>
                 <sheet>
                     <div class="oe_button_box" name="button_box">
@@ -90,6 +94,10 @@
                             <field name="info_count"/>
                             <field name="avg_response_time"/>
                             <field name="avg_word_count"/>
+                            <field name="indexable_pct"/>
+                            <field name="https_pct"/>
+                            <field name="mobile_pct"/>
+                            <field name="schema_pct"/>
                             <field name="checked_link_count"
                                    invisible="not checked_link_count"/>
                             <field name="broken_link_count"

@@ -18,6 +18,15 @@
                                  help="Paste the full JSON key of a Google Cloud service account (Search Console API + Analytics Data API enabled), then add its email to your Search Console property and GA4 property. See the field tooltip for the 3 steps.">
                             <field name="seo_google_service_account" password="True"/>
                         </setting>
+                        <setting string="AI recommendations"
+                                 help="BYO key (Claude or Gemini) for AI title/meta suggestions, heading rewrites and JSON-LD generation — the human always validates before publishing.">
+                            <field name="seo_ai_provider"/>
+                            <field name="seo_anthropic_api_key" password="True"
+                                   invisible="seo_ai_provider != 'claude'"/>
+                            <field name="seo_gemini_api_key" password="True"
+                                   invisible="seo_ai_provider != 'gemini'"/>
+                            <field name="seo_ai_model"/>
+                        </setting>
                         <setting string="DataForSEO"
                                  help="Paid BYO API (dataforseo.com) for keyword search volumes / CPC and live SERP snapshots — the legal alternative to scraping Google.">
                             <field name="seo_dataforseo_login"/>

@@ -138,16 +138,30 @@ class SeoSite(models.Model):
         digits=(6, 2))
     avg_word_count = fields.Integer(
         compute="_compute_stats", string="Avg word count")
+    https_pct = fields.Integer(
+        compute="_compute_stats", string="HTTPS (%)")
+    mobile_pct = fields.Integer(
+        compute="_compute_stats", string="Mobile-friendly (%)",
+        help="Pages with a viewport meta tag.")
+    schema_pct = fields.Integer(
+        compute="_compute_stats", string="Structured data (%)",
+        help="Pages with at least one schema.org block.")
+    indexable_pct = fields.Integer(
+        compute="_compute_stats", string="Indexable (%)",
+        help="Pages returning 200 without a noindex directive.")
 
     @api.depends("audit_ids.issue_count", "audit_ids.score",
                  "audit_ids.status_code", "audit_ids.error",
                  "audit_ids.critical_count", "audit_ids.warning_count",
                  "audit_ids.info_count", "audit_ids.response_time",
-                 "audit_ids.word_count")
+                 "audit_ids.word_count", "audit_ids.is_https",
+                 "audit_ids.viewport", "audit_ids.schema_count",
+                 "audit_ids.meta_robots")
     def _compute_stats(self):
         for rec in self:
             audits = rec.audit_ids
-            rec.page_count = len(audits)
+            count = len(audits)
+            rec.page_count = count
             rec.issue_count = sum(audits.mapped("issue_count"))
             rec.critical_count = sum(audits.mapped("critical_count"))
             rec.warning_count = sum(audits.mapped("warning_count"))
@@ -155,17 +169,24 @@ class SeoSite(models.Model):
             rec.error_page_count = len(audits.filtered(
                 lambda a: a.error or a.status_code >= 400))
             rec.score = (
-                round(sum(audits.mapped("score")) / len(audits))
-                if audits else 0
-            )
+                round(sum(audits.mapped("score")) / count) if count else 0)
             rec.avg_response_time = (
-                sum(audits.mapped("response_time")) / len(audits)
-                if audits else 0.0
-            )
+                sum(audits.mapped("response_time")) / count if count else 0.0)
             rec.avg_word_count = (
-                round(sum(audits.mapped("word_count")) / len(audits))
-                if audits else 0
-            )
+                round(sum(audits.mapped("word_count")) / count)
+                if count else 0)
+
+            def pct(predicate):
+                return round(
+                    100 * len(audits.filtered(predicate)) / count
+                ) if count else 0
+
+            rec.https_pct = pct(lambda a: a.is_https)
+            rec.mobile_pct = pct(lambda a: a.viewport)
+            rec.schema_pct = pct(lambda a: a.schema_count > 0)
+            rec.indexable_pct = pct(
+                lambda a: a.status_code == 200 and not a.error
+                and "noindex" not in (a.meta_robots or "").lower())
 
     def action_crawl(self):
         self.ensure_one()
@@ -536,6 +557,36 @@ class SeoSite(models.Model):
                 },
             }
         return True
+
+    AI_BULK_BATCH = 8  # pages per click, to stay within the request timeout
+
+    def action_ai_suggest_missing_metas(self):
+        """AI meta suggestions for every crawled page missing one (batched)."""
+        self.ensure_one()
+        candidates = self.audit_ids.filtered(
+            lambda a: a.status_code == 200 and not a.error
+            and not a.meta_description and not a.ai_meta_description)
+        if not candidates:
+            raise UserError(
+                "No page needs a meta description suggestion (all pages "
+                "have one, or already have an AI suggestion).")
+        batch = candidates[:self.AI_BULK_BATCH]
+        for audit in batch:
+            audit.action_ai_suggest_meta()
+        remaining = len(candidates) - len(batch)
+        return {
+            "type": "ir.actions.client",
+            "tag": "display_notification",
+            "params": {
+                "title": "AI suggestions generated",
+                "message": "%d page(s) done%s" % (
+                    len(batch),
+                    " — %d remaining, click again" % remaining
+                    if remaining else ", all pages covered"),
+                "type": "success" if not remaining else "warning",
+                "sticky": bool(remaining),
+            },
+        }
 
     def action_view_audits(self):
         self.ensure_one()
