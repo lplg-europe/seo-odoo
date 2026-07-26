@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     "name": "SEO Suite",
-    "version": "19.0.1.10.0",
+    "version": "19.0.1.12.0",
     "summary": "SEO suite for Odoo: on-page, technical and content audit.",
     "description": """
 SEO Suite
@@ -67,6 +67,7 @@ Integrations:
         "views/seo_issue_views.xml",
         "views/seo_history_views.xml",
         "views/seo_keyword_views.xml",
+        "views/seo_ai_prompt_views.xml",
         "views/seo_report_wizard_views.xml",
         "views/res_config_settings_views.xml",
         "report/seo_site_report.xml",

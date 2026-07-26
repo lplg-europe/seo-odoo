@@ -82,6 +82,64 @@ class SeoSite(models.Model):
     dfs_language = fields.Char(
         string="SERP language", default="fr",
         help="DataForSEO language_code, e.g. fr, nl, en.")
+    bl_rank = fields.Integer(
+        string="Domain rank", readonly=True,
+        help="DataForSEO backlink rank of the domain (0-1000).")
+    bl_backlinks = fields.Integer(string="Backlinks", readonly=True)
+    bl_referring_domains = fields.Integer(
+        string="Referring domains", readonly=True)
+    bl_referring_pages = fields.Integer(
+        string="Referring pages", readonly=True)
+    bl_broken_backlinks = fields.Integer(
+        string="Broken backlinks", readonly=True)
+    bl_dofollow = fields.Integer(string="Dofollow links", readonly=True)
+    bl_spam_score = fields.Integer(
+        string="Spam score", readonly=True,
+        help="Average spam score of the backlink profile (0-100, "
+             "lower is better).")
+    bl_first_seen = fields.Char(string="First backlink seen", readonly=True)
+    bl_date = fields.Datetime(string="Backlinks fetched on", readonly=True)
+    brand_name = fields.Char(
+        string="Brand name",
+        help="The brand to look for in AI answers, e.g. "
+             '"Les Trois Chênes". Used by AI Visibility.')
+    ai_competitors = fields.Char(
+        string="Competitor brands",
+        help="Comma-separated competitor brand names for the AI share "
+             "of voice comparison.")
+    ai_prompt_ids = fields.One2many(
+        "seo.ai.prompt", "site_id", string="AI prompts")
+    ai_mentions_chatgpt = fields.Integer(
+        string="ChatGPT mention prompts", readonly=True,
+        help="Prompts where ChatGPT mentions or cites this domain "
+             "(DataForSEO LLM Mentions, US/en dataset).")
+    ai_mentions_google = fields.Integer(
+        string="AI Overview mention prompts", readonly=True)
+    ai_mentions_detail = fields.Text(
+        string="AI mention prompts", readonly=True)
+    ai_share_of_voice = fields.Text(
+        string="AI share of voice", readonly=True)
+    ai_visibility_date = fields.Datetime(
+        string="AI visibility scanned on", readonly=True)
+    ai_visibility_pct = fields.Integer(
+        compute="_compute_ai_visibility", string="AI visibility (%)",
+        help="Share of prompt-explorer results where the brand is "
+             "mentioned.")
+    ai_cited_pct = fields.Integer(
+        compute="_compute_ai_visibility", string="AI citations (%)")
+
+    @api.depends("ai_prompt_ids.result_ids.brand_mentioned",
+                 "ai_prompt_ids.result_ids.domain_cited")
+    def _compute_ai_visibility(self):
+        for rec in self:
+            results = rec.ai_prompt_ids.mapped("result_ids")
+            count = len(results)
+            rec.ai_visibility_pct = (
+                round(100 * len(results.filtered("brand_mentioned")) / count)
+                if count else 0)
+            rec.ai_cited_pct = (
+                round(100 * len(results.filtered("domain_cited")) / count)
+                if count else 0)
 
     @api.depends("history_ids")
     def _compute_history_count(self):
@@ -224,11 +282,7 @@ class SeoSite(models.Model):
         self.audit_ids.filtered(
             lambda a: a.name not in crawled_urls).unlink()
 
-        site_issues = analyze_site(
-            pages, result.get("favicon_ok", True),
-            broken_links=result.get("broken_links"),
-            referrers=result.get("referrers"),
-        )
+        site_issues = analyze_site(pages, result)
         self.write({
             "last_crawl": fields.Datetime.now(),
             "discovered_count": result["discovered"],
@@ -585,6 +639,103 @@ class SeoSite(models.Model):
                     if remaining else ", all pages covered"),
                 "type": "success" if not remaining else "warning",
                 "sticky": bool(remaining),
+            },
+        }
+
+    def action_ai_visibility_scan(self):
+        """LLM Mentions scan: prompts citing this domain in ChatGPT and
+        Google AI Overview, plus brand share of voice vs competitors."""
+        self.ensure_one()
+        login, password = self._dataforseo_credentials()
+        from ..dataforseo import (
+            DataForSeoError, llm_mentions_search, llm_share_of_voice)
+        host = self._bare_host()
+        total_cost = 0.0
+        detail = []
+        counts = {}
+        try:
+            for platform, label in (("chat_gpt", "ChatGPT"),
+                                    ("google", "Google AI Overview")):
+                rows, cost = llm_mentions_search(
+                    login, password, host, platform=platform)
+                total_cost += cost
+                counts[platform] = len(rows)
+                detail.append("=== %s — %d prompt(s) mention/cite %s ==="
+                              % (label, len(rows), host))
+                for row in rows[:20]:
+                    detail.append("- %s (AI search volume: %d)"
+                                  % (row["question"], row["volume"]))
+        except DataForSeoError as e:
+            raise UserError(str(e))
+
+        sov_lines = []
+        brands = [b.strip() for b in (self.ai_competitors or "").split(",")
+                  if b.strip()]
+        if self.brand_name and brands:
+            try:
+                sov, cost = llm_share_of_voice(
+                    login, password, [self.brand_name.strip()] + brands)
+                total_cost += cost
+                total = sum(r["mentions"] for r in sov) or 1
+                sov_lines = [
+                    "%-40s %6d mentions  (%d%%)" % (
+                        r["brand"][:40], r["mentions"],
+                        round(100 * r["mentions"] / total))
+                    for r in sov]
+            except DataForSeoError as e:
+                sov_lines = ["Share of voice failed: %s" % e]
+
+        self.write({
+            "ai_mentions_chatgpt": counts.get("chat_gpt", 0),
+            "ai_mentions_google": counts.get("google", 0),
+            "ai_mentions_detail": "\n".join(detail) or "No mentions found",
+            "ai_share_of_voice": "\n".join(sov_lines),
+            "ai_visibility_date": fields.Datetime.now(),
+        })
+        return {
+            "type": "ir.actions.client",
+            "tag": "display_notification",
+            "params": {
+                "title": "AI visibility scanned",
+                "message": "ChatGPT: %d prompt(s), AI Overview: %d — "
+                           "cost $%.4f" % (
+                               counts.get("chat_gpt", 0),
+                               counts.get("google", 0), total_cost),
+                "type": "success",
+            },
+        }
+
+    def action_fetch_backlinks(self):
+        """Backlink profile overview via DataForSEO (paid, BYO)."""
+        self.ensure_one()
+        login, password = self._dataforseo_credentials()
+        from ..dataforseo import DataForSeoError, backlinks_summary
+        try:
+            data, cost = backlinks_summary(
+                login, password, self._bare_host())
+        except DataForSeoError as e:
+            raise UserError(str(e))
+        self.write({
+            "bl_rank": data["rank"],
+            "bl_backlinks": data["backlinks"],
+            "bl_referring_domains": data["referring_domains"],
+            "bl_referring_pages": data["referring_pages"],
+            "bl_broken_backlinks": data["broken_backlinks"],
+            "bl_dofollow": data["dofollow"],
+            "bl_spam_score": data["spam_score"],
+            "bl_first_seen": data["first_seen"],
+            "bl_date": fields.Datetime.now(),
+        })
+        return {
+            "type": "ir.actions.client",
+            "tag": "display_notification",
+            "params": {
+                "title": "Backlinks fetched",
+                "message": "%d backlinks from %d referring domains — "
+                           "cost $%.4f" % (
+                               data["backlinks"],
+                               data["referring_domains"], cost),
+                "type": "success",
             },
         }
 

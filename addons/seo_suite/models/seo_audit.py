@@ -73,6 +73,11 @@ class SeoAudit(models.Model):
     link_score = fields.Integer(
         string="Link score", readonly=True,
         help="Internal PageRank of the page within the crawl (1-100).")
+    click_depth = fields.Integer(
+        string="Click depth", readonly=True,
+        help="Clicks from the homepage via internal links "
+             "(0 = homepage, -1 = not reachable by links).")
+    x_robots_tag = fields.Char(string="X-Robots-Tag", readonly=True)
     psi_date = fields.Datetime(string="PageSpeed run on", readonly=True)
     psi_perf_mobile = fields.Integer(string="Perf (mobile)", readonly=True)
     psi_seo_mobile = fields.Integer(string="SEO (mobile)", readonly=True)
@@ -400,11 +405,18 @@ class SeoAudit(models.Model):
                 "%s (%d)" % (word, count)
                 for word, count in page["top_keywords"]),
             "link_score": page["link_score"],
+            "click_depth": (page["click_depth"]
+                            if page["click_depth"] is not None else -1),
+            "x_robots_tag": page["x_robots_tag"],
             "issues": "\n".join(
                 i["message"] for i in issues) or "No issues detected",
             "issue_count": len(issues),
             "critical_count": by_severity["critical"],
             "warning_count": by_severity["warning"],
             "info_count": by_severity["info"],
-            "issue_ids": [(5, 0, 0)] + [(0, 0, dict(i)) for i in issues],
+            "issue_ids": [(5, 0, 0)] + [
+                (0, 0, {"severity": i["severity"], "category": i["category"],
+                        "message": i["message"],
+                        "how_to_fix": i.get("fix", "")})
+                for i in issues],
         }

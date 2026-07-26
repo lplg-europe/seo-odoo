@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="view_seo_ai_prompt_list" model="ir.ui.view">
+        <field name="name">seo.ai.prompt.list</field>
+        <field name="model">seo.ai.prompt</field>
+        <field name="arch" type="xml">
+            <list string="AI prompts">
+                <field name="name"/>
+                <field name="site_id" optional="show"/>
+                <field name="mention_summary"/>
+                <field name="web_search" optional="hide"/>
+                <field name="last_run"/>
+                <button name="action_run" type="object" icon="fa-play"
+                        title="Ask the 4 LLM platforms (DataForSEO, paid)"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_seo_ai_prompt_form" model="ir.ui.view">
+        <field name="name">seo.ai.prompt.form</field>
+        <field name="model">seo.ai.prompt</field>
+        <field name="arch" type="xml">
+            <form string="AI prompt">
+                <header>
+                    <button name="action_run" type="object"
+                            string="Ask the AIs" class="btn-primary"
+                            icon="fa-play"
+                            help="Runs the prompt on ChatGPT, Claude, Gemini and Perplexity via DataForSEO (paid, ~$0.01-0.05 per platform). Takes 1-2 minutes."/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <label for="name" string="Prompt"/>
+                        <h2><field name="name"
+                                   placeholder="e.g. best retirement home near Manage, Belgium"/></h2>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="site_id"/>
+                            <field name="web_search"/>
+                        </group>
+                        <group>
+                            <field name="mention_summary"/>
+                            <field name="last_run"/>
+                        </group>
+                    </group>
+                    <field name="result_ids" readonly="1">
+                        <list decoration-success="brand_mentioned"
+                              decoration-muted="not brand_mentioned">
+                            <field name="platform"/>
+                            <field name="model"/>
+                            <field name="brand_mentioned"/>
+                            <field name="domain_cited"/>
+                            <field name="cost"/>
+                            <field name="date"/>
+                        </list>
+                        <form>
+                            <group>
+                                <field name="platform"/>
+                                <field name="model"/>
+                                <field name="brand_mentioned"/>
+                                <field name="domain_cited"/>
+                            </group>
+                            <group string="Answer">
+                                <field name="response" nolabel="1"/>
+                            </group>
+                            <group string="Cited URLs">
+                                <field name="citations" nolabel="1"/>
+                            </group>
+                        </form>
+                    </field>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_seo_ai_prompt" model="ir.actions.act_window">
+        <field name="name">AI Visibility</field>
+        <field name="res_model">seo.ai.prompt</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Test your AI visibility</p>
+            <p>Write the questions your prospects ask ChatGPT, Claude, Gemini
+               or Perplexity — and check whether your brand is mentioned and
+               your site cited in the answers (BYO DataForSEO key).</p>
+        </field>
+    </record>
+
+    <menuitem id="menu_seo_ai_prompt" name="AI Visibility"
+              parent="menu_seo_root" action="action_seo_ai_prompt"
+              sequence="9"/>
+
+</odoo>

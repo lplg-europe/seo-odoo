@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="view_wa_site_list" model="ir.ui.view">
+        <field name="name">web.analytics.site.list</field>
+        <field name="model">web.analytics.site</field>
+        <field name="arch" type="xml">
+            <list string="Websites">
+                <field name="name"/>
+                <field name="live_visitors"/>
+                <field name="visitors_today"/>
+                <field name="pageviews_today"/>
+                <field name="visitors_30d"/>
+                <field name="pageviews_30d"/>
+                <field name="sessions_30d"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_wa_site_form" model="ir.ui.view">
+        <field name="name">web.analytics.site.form</field>
+        <field name="model">web.analytics.site</field>
+        <field name="arch" type="xml">
+            <form string="Website">
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_view_events" type="object"
+                                class="oe_stat_button" icon="fa-area-chart">
+                            <field name="pageviews_30d" widget="statinfo"
+                                   string="Pageviews 30d"/>
+                        </button>
+                    </div>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1><field name="name" placeholder="my-website.be"/></h1>
+                    </div>
+                    <group>
+                        <group string="Setup">
+                            <field name="token" readonly="1"/>
+                            <field name="allowed_hosts"
+                                   placeholder="www.my-website.be"/>
+                            <field name="active"/>
+                        </group>
+                        <group string="Traffic">
+                            <field name="live_visitors"/>
+                            <field name="visitors_today"/>
+                            <field name="pageviews_today"/>
+                            <field name="visitors_30d"/>
+                            <field name="sessions_30d"/>
+                        </group>
+                    </group>
+                    <group string="Tracking snippet (paste before &lt;/head&gt;)">
+                        <field name="snippet" nolabel="1" readonly="1"
+                               class="font-monospace"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_wa_event_list" model="ir.ui.view">
+        <field name="name">web.analytics.event.list</field>
+        <field name="model">web.analytics.event</field>
+        <field name="arch" type="xml">
+            <list string="Events" create="false" default_order="timestamp desc">
+                <field name="timestamp"/>
+                <field name="site_id" optional="show"/>
+                <field name="event_type" optional="hide"/>
+                <field name="event_name" optional="hide"/>
+                <field name="path"/>
+                <field name="channel"/>
+                <field name="referrer_host" optional="show"/>
+                <field name="device_type"/>
+                <field name="browser" optional="show"/>
+                <field name="os" optional="hide"/>
+                <field name="lang" optional="hide"/>
+                <field name="utm_source" optional="hide"/>
+                <field name="utm_campaign" optional="hide"/>
+                <field name="visitor_hash" optional="hide"/>
+                <field name="session_id" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_wa_event_search" model="ir.ui.view">
+        <field name="name">web.analytics.event.search</field>
+        <field name="model">web.analytics.event</field>
+        <field name="arch" type="xml">
+            <search string="Events">
+                <field name="path"/>
+                <field name="referrer_host"/>
+                <field name="site_id"/>
+                <filter name="filter_pageviews" string="Pageviews"
+                        domain="[('event_type', '=', 'pageview')]"/>
+                <filter name="filter_new_sessions" string="Session starts"
+                        domain="[('is_new_session', '=', True)]"/>
+                <separator/>
+                <filter name="filter_today" string="Today"
+                        domain="[('timestamp', '&gt;=', 'today')]"/>
+                <filter name="filter_7d" string="Last 7 days"
+                        domain="[('timestamp', '&gt;=', (context_today() - datetime.timedelta(days=7)).strftime('%Y-%m-%d'))]"/>
+                <filter name="filter_30d" string="Last 30 days"
+                        domain="[('timestamp', '&gt;=', (context_today() - datetime.timedelta(days=30)).strftime('%Y-%m-%d'))]"/>
+                <separator/>
+                <filter name="group_channel" string="Channel"
+                        context="{'group_by': 'channel'}"/>
+                <filter name="group_path" string="Page"
+                        context="{'group_by': 'path'}"/>
+                <filter name="group_referrer" string="Referrer"
+                        context="{'group_by': 'referrer_host'}"/>
+                <filter name="group_device" string="Device"
+                        context="{'group_by': 'device_type'}"/>
+                <filter name="group_browser" string="Browser"
+                        context="{'group_by': 'browser'}"/>
+                <filter name="group_day" string="Day"
+                        context="{'group_by': 'timestamp:day'}"/>
+                <filter name="group_site" string="Site"
+                        context="{'group_by': 'site_id'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="view_wa_event_graph" model="ir.ui.view">
+        <field name="name">web.analytics.event.graph</field>
+        <field name="model">web.analytics.event</field>
+        <field name="arch" type="xml">
+            <graph string="Traffic" type="line" sample="1">
+                <field name="timestamp" interval="day"/>
+            </graph>
+        </field>
+    </record>
+
+    <record id="view_wa_event_pivot" model="ir.ui.view">
+        <field name="name">web.analytics.event.pivot</field>
+        <field name="model">web.analytics.event</field>
+        <field name="arch" type="xml">
+            <pivot string="Traffic" sample="1">
+                <field name="channel" type="row"/>
+                <field name="timestamp" interval="week" type="col"/>
+            </pivot>
+        </field>
+    </record>
+
+    <record id="action_wa_site" model="ir.actions.act_window">
+        <field name="name">Websites</field>
+        <field name="res_model">web.analytics.site</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Track your first website</p>
+            <p>Create a site, paste the one-line snippet on the website, and
+               watch visitors arrive — cookieless and privacy-first, no
+               consent banner needed for basic analytics.</p>
+        </field>
+    </record>
+
+    <record id="action_wa_traffic" model="ir.actions.act_window">
+        <field name="name">Traffic</field>
+        <field name="res_model">web.analytics.event</field>
+        <field name="view_mode">graph,pivot,list</field>
+        <field name="context">{'search_default_filter_30d': 1,
+                               'search_default_filter_pageviews': 1}</field>
+    </record>
+
+    <record id="action_wa_events" model="ir.actions.act_window">
+        <field name="name">Events</field>
+        <field name="res_model">web.analytics.event</field>
+        <field name="view_mode">list,graph,pivot</field>
+        <field name="context">{'search_default_filter_today': 1}</field>
+    </record>
+
+    <menuitem id="menu_wa_root" name="Analytics" sequence="91"/>
+    <menuitem id="menu_wa_site" name="Websites" parent="menu_wa_root"
+              action="action_wa_site" sequence="5"/>
+    <menuitem id="menu_wa_traffic" name="Traffic" parent="menu_wa_root"
+              action="action_wa_traffic" sequence="10"/>
+    <menuitem id="menu_wa_events" name="Events" parent="menu_wa_root"
+              action="action_wa_events" sequence="15"/>
+
+</odoo>

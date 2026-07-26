@@ -29,6 +29,10 @@ Console, keywords and AI recommendations planned.
 | SERP & volumes | ✅ | DataForSEO (BYO paid key): monthly volumes/CPC/competition + live SERP snapshots with competitor list |
 | Quick audit | ✅ | One-click wizard: paste a prospect URL → crawl → printable report (built for "free SEO audit" offers) |
 | AI recommendations | ✅ | BYO Claude/Gemini key: title/meta/H1 writing (single + bulk missing-metas), heading rewrites, JSON-LD generation — human validates, never auto-published |
+| Technical checks+ | ✅ | Canonical conflicts (HTML vs HTTP header), X-Robots-Tag noindex, orphan pages, click depth, dead-end pages, heading skips, WAF-blocked pages, HSTS — every issue ships with a how-to-fix |
+| AI crawler access | ✅ | GEO check: which AI crawlers (GPTBot, ClaudeBot, Perplexity…) does robots.txt lock out of your content |
+| Backlinks | ✅ | Domain overview via DataForSEO: rank, backlinks, referring domains, dofollow, spam score |
+| AI Visibility (GEO) | ✅ | Prompt explorer (ask ChatGPT/Claude/Gemini/Perplexity and check brand mentions + citations), LLM mention prompts for your domain, AI share of voice vs competitors |
 
 The crawl engine ([crawler.py](addons/seo_suite/crawler.py)) is pure Python
 stdlib with **no Odoo dependency** — it can be reused standalone (scripts, CI,
@@ -51,7 +55,7 @@ with exactly the same rules as the Odoo module:
 ```
 
 ### Roadmap
-- Backlinks & domain overview (DataForSEO)
+- Backlinks detail tables (per-link list, new/lost trends)
 - Server log analyzer (bots, LLM crawlers)
 - Odoo Website helpers: sitemap, robots, schema, redirects
 

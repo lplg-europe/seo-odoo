@@ -39,3 +39,4 @@ class SeoAuditIssue(models.Model):
     severity = fields.Selection(SEVERITIES, string="Severity", required=True)
     category = fields.Selection(CATEGORIES, string="Category", required=True)
     message = fields.Char(string="Issue", required=True)
+    how_to_fix = fields.Text(string="How to fix", readonly=True)

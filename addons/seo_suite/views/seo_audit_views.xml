@@ -172,6 +172,7 @@
                                 <field name="severity"/>
                                 <field name="category"/>
                                 <field name="message"/>
+                                <field name="how_to_fix" optional="show"/>
                             </list>
                         </field>
                     </group>

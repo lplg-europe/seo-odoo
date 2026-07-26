@@ -13,6 +13,7 @@
                 <field name="category"/>
                 <field name="severity"/>
                 <field name="message"/>
+                <field name="how_to_fix" optional="show"/>
                 <field name="site_id" optional="show"/>
                 <field name="audit_id" optional="hide"/>
             </list>

@@ -132,9 +132,11 @@ def _page_summary(page):
         "mixed_content": page["mixed_content"],
         "unsafe_blank_links": page["unsafe_blank_links"],
         "error": page["error"],
+        "click_depth": page.get("click_depth"),
         "issues": [
             {"severity": issue["severity"], "category": issue["category"],
-             "message": issue["message"]}
+             "message": issue["message"],
+             "how_to_fix": issue.get("fix", "")}
             for issue in page["issues"]
         ],
     }
@@ -163,10 +165,7 @@ def tool_crawl_site(arguments):
     )
     pages = result["pages"]
     scores = [page["score"] for page in pages]
-    site_issues = crawler.analyze_site(
-        pages, result.get("favicon_ok", True),
-        broken_links=result.get("broken_links"),
-        referrers=result.get("referrers"))
+    site_issues = crawler.analyze_site(pages, result)
     return {
         "site_score": round(sum(scores) / len(scores)) if scores else 0,
         "pages_crawled": len(pages),

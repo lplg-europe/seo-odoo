@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 from . import res_config_settings
+from . import seo_ai_prompt
 from . import seo_audit
 from . import seo_audit_issue
 from . import seo_crawl_history

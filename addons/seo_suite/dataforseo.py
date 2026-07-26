@@ -79,6 +79,147 @@ def search_volume(login, password, keywords, location="Belgium",
     return parse_search_volume(task), cost
 
 
+def parse_backlinks_summary(task):
+    """Key metrics from a backlinks summary task payload."""
+    result = (task.get("result") or [{}])[0] or {}
+    return {
+        "rank": int(result.get("rank") or 0),
+        "backlinks": int(result.get("backlinks") or 0),
+        "referring_domains": int(result.get("referring_domains") or 0),
+        "referring_pages": int(result.get("referring_pages") or 0),
+        "broken_backlinks": int(result.get("broken_backlinks") or 0),
+        "broken_pages": int(result.get("broken_pages") or 0),
+        "spam_score": int(result.get("target_spam_score") or 0),
+        "dofollow": int((result.get("referring_links_attributes") or {})
+                        .get("dofollow") or 0),
+        "first_seen": (result.get("first_seen") or "")[:10],
+    }
+
+
+def backlinks_summary(login, password, target):
+    """Backlink profile overview of a domain (DataForSEO Backlinks API).
+
+    Returns ({rank, backlinks, referring_domains, ...}, cost).
+    """
+    task, cost = _post(login, password, "/backlinks/summary/live", [{
+        "target": target,
+        "include_subdomains": True,
+        "internal_list_limit": 10,
+    }])
+    return parse_backlinks_summary(task), cost
+
+
+# --- AI Visibility (DataForSEO AI Optimization API) ------------------------
+
+# platform key -> (endpoint segment, default model asked by real users)
+LLM_PLATFORMS = {
+    "chatgpt": ("chat_gpt", "gpt-5"),
+    "claude": ("claude", "claude-sonnet-4-5"),
+    "gemini": ("gemini", "gemini-2.5-pro"),
+    "perplexity": ("perplexity", "sonar-reasoning-pro"),
+}
+US_LOCATION = 2840  # LLM Mentions data is US/en today
+
+
+def parse_llm_response(task):
+    """{text, citations: [urls], model} from an llm_responses task."""
+    result = (task.get("result") or [{}])[0] or {}
+    texts, citations = [], []
+    for item in result.get("items") or []:
+        for section in item.get("sections") or []:
+            if section.get("text"):
+                texts.append(section["text"])
+            for annotation in section.get("annotations") or []:
+                url = annotation.get("url")
+                if url and url not in citations:
+                    citations.append(url)
+    return {
+        "text": "\n".join(texts).strip(),
+        "citations": citations,
+        "model": result.get("model_name") or "",
+    }
+
+
+def llm_response(login, password, platform, prompt, web_search=True,
+                 model=None):
+    """Ask one LLM platform a prompt (as a real user would).
+
+    Returns ({text, citations, model}, cost).
+    """
+    segment, default_model = LLM_PLATFORMS[platform]
+    task, cost = _post(login, password,
+                       "/ai_optimization/%s/llm_responses/live" % segment, [{
+                           "user_prompt": prompt,
+                           "model_name": model or default_model,
+                           "web_search": bool(web_search),
+                       }], timeout=180)
+    return parse_llm_response(task), cost
+
+
+def parse_llm_mentions(task):
+    """[{question, volume}] from an llm_mentions/search task."""
+    result = (task.get("result") or [{}])[0] or {}
+    rows = []
+    for item in result.get("items") or []:
+        if item.get("question"):
+            rows.append({
+                "question": item["question"],
+                "volume": int(item.get("ai_search_volume") or 0),
+            })
+    return rows
+
+
+def llm_mentions_search(login, password, domain, platform="chat_gpt",
+                        limit=20):
+    """Prompts where AI assistants mention/cite this domain (US/en data).
+
+    platform: "chat_gpt" or "google" (AI Overview).
+    Returns ([{question, volume}], cost).
+    """
+    task, cost = _post(login, password,
+                       "/ai_optimization/llm_mentions/search/live", [{
+                           "target": [{"domain": domain}],
+                           "platform": platform,
+                           "location_code": US_LOCATION,
+                           "language_code": "en",
+                           "limit": limit,
+                       }])
+    return parse_llm_mentions(task), cost
+
+
+def parse_share_of_voice(task):
+    """[{brand, mentions}] from a cross_aggregated_metrics task."""
+    result = (task.get("result") or [{}])[0] or {}
+    rows = []
+    for item in result.get("items") or []:
+        total = 0
+        for group in item.get("platform") or []:
+            if isinstance(group, dict):
+                value = (group.get("count") if group.get("count") is not None
+                         else group.get("value"))
+                total += int(value or 0)
+        rows.append({"brand": item.get("key") or "?", "mentions": total})
+    rows.sort(key=lambda r: -r["mentions"])
+    return rows
+
+
+def llm_share_of_voice(login, password, brands, platform="chat_gpt"):
+    """Brand-vs-competitor mention counts in AI answers (US/en data).
+
+    Returns ([{brand, mentions}] sorted desc, cost).
+    """
+    task, cost = _post(
+        login, password,
+        "/ai_optimization/llm_mentions/cross_aggregated_metrics/live", [{
+            "target": [{"keyword": brand, "aggregation_key": brand}
+                       for brand in brands],
+            "platform": platform,
+            "location_code": US_LOCATION,
+            "language_code": "en",
+        }])
+    return parse_share_of_voice(task), cost
+
+
 def parse_serp_items(task):
     """Organic items [{position, domain, url, title}] from a task payload."""
     items = []

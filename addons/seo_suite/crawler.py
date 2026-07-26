@@ -13,6 +13,7 @@ import urllib.error
 import urllib.request
 import urllib.robotparser
 import xml.etree.ElementTree as ET
+from collections import deque
 from html.parser import HTMLParser
 from urllib.parse import urldefrag, urlencode, urljoin, urlsplit
 
@@ -33,6 +34,12 @@ PAGERANK_ITERATIONS = 10
 MAX_LINK_CHECKS = 200  # cap on HEAD requests for the broken-links pass
 MAX_REFERRERS = 3  # referring pages remembered per discovered URL
 PSI_ENDPOINT = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed"
+
+# Major AI crawlers — checked against robots.txt for GEO/AI visibility.
+AI_CRAWLERS = ("GPTBot", "OAI-SearchBot", "ChatGPT-User", "ClaudeBot",
+               "Claude-User", "anthropic-ai", "PerplexityBot",
+               "Google-Extended", "CCBot", "Meta-ExternalAgent",
+               "Bytespider")
 
 # Issue severities and their score penalty (score = 100 - sum of penalties).
 SEVERITY_WEIGHT = {"critical": 25, "warning": 10, "info": 5}
@@ -202,13 +209,19 @@ class SeoPageParser(HTMLParser):
                 self._text_len += len(stripped) + 1
 
 
+_LINK_CANONICAL_RE = re.compile(
+    r'<([^>]+)>[^,]*?rel=["\']?canonical', re.IGNORECASE)
+
+
 def fetch(url, timeout=15):
     """GET a URL. Returns {status, final_url, body, content_type, is_html,
-    error, response_time, page_size_kb, redirect_count}."""
+    error, response_time, page_size_kb, redirect_count, redirect_chain,
+    x_robots_tag, header_canonical, hsts}."""
     result = {
         "status": 0, "final_url": url, "body": "",
         "content_type": "", "is_html": False, "error": "",
         "response_time": 0.0, "page_size_kb": 0, "redirect_count": 0,
+        "x_robots_tag": "", "header_canonical": "", "hsts": False,
     }
     redirects = {"count": 0, "chain": []}
 
@@ -240,6 +253,13 @@ def fetch(url, timeout=15):
             result["content_type"] = ctype
             result["is_html"] = ctype in ("text/html", "application/xhtml+xml")
             result["body"] = raw.decode(charset, errors="replace")
+            result["x_robots_tag"] = resp.headers.get("X-Robots-Tag") or ""
+            result["hsts"] = bool(
+                resp.headers.get("Strict-Transport-Security"))
+            link_match = _LINK_CANONICAL_RE.search(
+                resp.headers.get("Link") or "")
+            if link_match:
+                result["header_canonical"] = link_match.group(1).strip()
     except urllib.error.HTTPError as e:
         result["status"] = e.code
         result["final_url"] = e.url or url
@@ -368,96 +388,206 @@ def og_status(og):
     return "partial" if have else "missing"
 
 
-def _issue(severity, category, message):
-    return {"severity": severity, "category": category, "message": message}
+def _issue(severity, category, message, fix=""):
+    return {"severity": severity, "category": category,
+            "message": message, "fix": fix}
+
+
+DEEP_PAGE_DEPTH = 5  # click depth from the homepage triggering an issue
 
 
 def page_issues(page):
     """On-page SEO issues for one fetched page.
 
-    Returns a list of dicts {"severity", "category", "message"}.
+    Returns a list of dicts {"severity", "category", "message", "fix"}.
     """
     if page["error"]:
+        loop = "redirect" in page["error"].lower()
+        return [_issue(
+            "critical", "technical",
+            "Redirect loop or too many redirects" if loop
+            else "Crawl error: %s" % page["error"],
+            "Fix the redirect targets so they resolve to a final page."
+            if loop else "Make the URL reachable or remove links to it.")]
+    if page["status"] in (403, 429):
         return [_issue("critical", "technical",
-                       "Crawl error: %s" % page["error"])]
+                       "Page blocked (HTTP %d — WAF or bot challenge?)"
+                       % page["status"],
+                       "Allow legitimate crawlers (including search "
+                       "engines) through your firewall/CDN rules.")]
+    if page["status"] >= 500:
+        return [_issue("critical", "technical",
+                       "Server error (HTTP %d)" % page["status"],
+                       "Fix the server-side error — search engines "
+                       "may drop pages that keep failing.")]
     if page["status"] >= 400:
-        return [_issue("critical", "technical", "HTTP %d" % page["status"])]
+        return [_issue("critical", "technical", "HTTP %d" % page["status"],
+                       "Restore the page or redirect (301) it to the "
+                       "closest relevant page, and update links to it.")]
     if not page["is_html"]:
         return []
     issues = []
     title = page["title"]
     desc = page["meta_description"]
     if not title:
-        issues.append(_issue("critical", "title", "Missing title"))
+        issues.append(_issue(
+            "critical", "title", "Missing title",
+            "Add a unique <title> of 20-60 characters including the "
+            "page's main keyword."))
     elif len(title) > TITLE_MAX:
-        issues.append(_issue("warning", "title",
-                             "Title too long (%d chars)" % len(title)))
+        issues.append(_issue(
+            "warning", "title", "Title too long (%d chars)" % len(title),
+            "Shorten to about 60 characters so Google does not truncate "
+            "it; put the keyword near the start."))
     elif len(title) < TITLE_MIN:
-        issues.append(_issue("warning", "title",
-                             "Title too short (%d chars)" % len(title)))
+        issues.append(_issue(
+            "warning", "title", "Title too short (%d chars)" % len(title),
+            "Expand to 20-60 characters with a descriptive keyword — "
+            "short titles waste ranking signal."))
     if not desc:
-        issues.append(_issue("warning", "meta", "Missing meta description"))
+        issues.append(_issue(
+            "warning", "meta", "Missing meta description",
+            "Write a 140-160 character description that includes the "
+            "keyword and gives a reason to click."))
     elif len(desc) > META_DESC_MAX:
-        issues.append(_issue("warning", "meta",
-                             "Meta description too long (%d chars)" % len(desc)))
+        issues.append(_issue(
+            "warning", "meta",
+            "Meta description too long (%d chars)" % len(desc),
+            "Trim to 160 characters or less — Google truncates the rest."))
     if len(page["h1"]) == 0:
-        issues.append(_issue("warning", "headings", "No H1"))
+        issues.append(_issue(
+            "warning", "headings", "No H1",
+            "Add exactly one H1 stating what the page is about."))
     elif len(page["h1"]) > 1:
-        issues.append(_issue("warning", "headings",
-                             "%d H1 tags (only one recommended)" % len(page["h1"])))
-    if "noindex" in page["meta_robots"].lower():
-        issues.append(_issue("critical", "technical",
-                             "Page is noindex (not indexable)"))
+        issues.append(_issue(
+            "warning", "headings",
+            "%d H1 tags (only one recommended)" % len(page["h1"]),
+            "Keep one H1 and demote the others to H2/H3."))
+    skip = _heading_skip(page["headings"])
+    if skip:
+        issues.append(_issue(
+            "info", "headings",
+            "Heading level skip (H%d follows H%d)" % skip,
+            "Keep a logical heading hierarchy — do not jump levels "
+            "(H2 after H1, H3 after H2...)."))
+    robots_all = "%s %s" % (page["meta_robots"], page["x_robots_tag"])
+    if "noindex" in robots_all.lower():
+        issues.append(_issue(
+            "critical", "technical",
+            "Page is noindex (meta robots or X-Robots-Tag)",
+            "Remove the noindex directive if this page should rank; "
+            "keep it only for pages you want out of Google."))
     canonical = page["canonical"]
-    if canonical:
-        target = urljoin(page["final_url"], canonical)
+    header_canonical = page["header_canonical"]
+    if canonical and header_canonical and _norm_for_compare(
+            urljoin(page["final_url"], canonical)) != _norm_for_compare(
+            urljoin(page["final_url"], header_canonical)):
+        issues.append(_issue(
+            "warning", "technical",
+            "Canonical conflict (HTML says %s, HTTP header says %s)"
+            % (canonical, header_canonical),
+            "Make the <link rel=canonical> and the Link HTTP header "
+            "point to the same URL — conflicting signals are ignored."))
+    effective_canonical = canonical or header_canonical
+    if effective_canonical:
+        target = urljoin(page["final_url"], effective_canonical)
         if _norm_for_compare(target) != _norm_for_compare(page["final_url"]):
-            issues.append(_issue("info", "technical",
-                                 "Canonicalized to another URL (%s)" % canonical))
+            issues.append(_issue(
+                "info", "technical",
+                "Canonicalized to another URL (%s)" % effective_canonical,
+                "Expected for duplicates; if this page should rank on "
+                "its own, make it self-canonical."))
     if page["word_count"] < THIN_CONTENT_WORDS:
-        issues.append(_issue("warning", "content",
-                             "Thin content (%d words)" % page["word_count"]))
+        issues.append(_issue(
+            "warning", "content",
+            "Thin content (%d words)" % page["word_count"],
+            "Expand the page to 300+ words of genuinely useful content, "
+            "or merge it into a stronger page."))
     if page["images_without_alt"]:
-        issues.append(_issue("warning", "images",
-                             "%d image(s) without alt attribute"
-                             % page["images_without_alt"]))
+        issues.append(_issue(
+            "warning", "images",
+            "%d image(s) without alt attribute"
+            % page["images_without_alt"],
+            "Describe each image in its alt attribute — it helps "
+            "accessibility and image search."))
     if not page["lang"]:
-        issues.append(_issue("warning", "technical",
-                             "Missing lang attribute on <html>"))
+        issues.append(_issue(
+            "warning", "technical", "Missing lang attribute on <html>",
+            'Add lang="fr" (or the page language) on the <html> tag.'))
     if not page["viewport"]:
-        issues.append(_issue("warning", "technical",
-                             "No viewport meta tag (not mobile-friendly)"))
+        issues.append(_issue(
+            "warning", "technical",
+            "No viewport meta tag (not mobile-friendly)",
+            'Add <meta name="viewport" content="width=device-width, '
+            'initial-scale=1"> — Google indexes mobile-first.'))
     if page["og"] == "missing":
-        issues.append(_issue("warning", "social",
-                             "No Open Graph tags (poor social sharing)"))
+        issues.append(_issue(
+            "warning", "social", "No Open Graph tags (poor social sharing)",
+            "Add og:title, og:description and og:image so shares on "
+            "social networks look good."))
     elif page["og"] == "partial":
-        issues.append(_issue("info", "social",
-                             "Incomplete Open Graph tags (need title, "
-                             "description and image)"))
+        issues.append(_issue(
+            "info", "social",
+            "Incomplete Open Graph tags (need title, description and image)",
+            "Complete the missing og: tags — the image drives most of "
+            "the click-through on shares."))
     if not page["schema_types"] and not page["schema_count"]:
-        issues.append(_issue("info", "technical",
-                             "No structured data (schema.org)"))
+        issues.append(_issue(
+            "info", "technical", "No structured data (schema.org)",
+            "Add JSON-LD structured data (Organization, LocalBusiness, "
+            "Article...) to qualify for rich results."))
     if not page["is_https"]:
-        issues.append(_issue("warning", "security", "Page served over HTTP"))
+        issues.append(_issue(
+            "warning", "security", "Page served over HTTP",
+            "Serve everything over HTTPS and 301-redirect HTTP URLs."))
     if page["mixed_content"]:
-        issues.append(_issue("warning", "security",
-                             "%d insecure http:// resource(s) on an HTTPS page"
-                             % page["mixed_content"]))
+        issues.append(_issue(
+            "warning", "security",
+            "%d insecure http:// resource(s) on an HTTPS page"
+            % page["mixed_content"],
+            "Load all images/scripts/styles over https:// — browsers "
+            "block or flag mixed content."))
     if page["unsafe_blank_links"]:
-        issues.append(_issue("info", "security",
-                             '%d target="_blank" link(s) without rel="noopener"'
-                             % page["unsafe_blank_links"]))
+        issues.append(_issue(
+            "info", "security",
+            '%d target="_blank" link(s) without rel="noopener"'
+            % page["unsafe_blank_links"],
+            'Add rel="noopener" (or noreferrer) to target="_blank" '
+            "links to prevent tab-nabbing."))
+    if page["is_html"] and page["internal_links"] + page["external_links"] == 0:
+        issues.append(_issue(
+            "warning", "links", "Dead-end page (no outgoing links)",
+            "Link to related pages — dead ends waste link equity and "
+            "strand visitors."))
     if page["redirect_count"] >= REDIRECT_CHAIN_MIN:
-        issues.append(_issue("warning", "performance",
-                             "Redirect chain (%d hops) to reach the page"
-                             % page["redirect_count"]))
+        issues.append(_issue(
+            "warning", "performance",
+            "Redirect chain (%d hops) to reach the page"
+            % page["redirect_count"],
+            "Point links and redirects straight to the final URL — "
+            "each hop wastes crawl budget and speed."))
     if page["response_time"] > SLOW_RESPONSE_S:
-        issues.append(_issue("info", "performance",
-                             "Slow response (%.1fs)" % page["response_time"]))
+        issues.append(_issue(
+            "info", "performance",
+            "Slow response (%.1fs)" % page["response_time"],
+            "Aim for under 1s server response: caching, image "
+            "optimization, faster hosting."))
     if 0 < page["text_ratio"] < LOW_TEXT_RATIO:
-        issues.append(_issue("info", "content",
-                             "Low text/HTML ratio (%d%%)" % page["text_ratio"]))
+        issues.append(_issue(
+            "info", "content",
+            "Low text/HTML ratio (%d%%)" % page["text_ratio"],
+            "Reduce markup bloat or add real text content."))
     return issues
+
+
+def _heading_skip(headings):
+    """First (level, previous_level) heading-hierarchy skip, or None."""
+    previous = None
+    for level, _text in headings:
+        if previous is not None and level > previous + 1:
+            return (level, previous)
+        previous = level
+    return None
 
 
 def issues_text(issues):
@@ -499,6 +629,9 @@ def fetch_page(url, timeout=15):
         "mixed_content": 0, "unsafe_blank_links": 0,
         "text_ratio": 0, "flesch_score": None, "flesch_label": "",
         "top_keywords": [], "link_score": 0, "text_excerpt": "",
+        "x_robots_tag": f["x_robots_tag"],
+        "header_canonical": f["header_canonical"],
+        "hsts": f["hsts"], "click_depth": None,
     }
     if f["is_html"] and f["body"] and not f["error"] and 0 < f["status"] < 400:
         parser = SeoPageParser()
@@ -689,6 +822,50 @@ def compute_link_scores(pages, site_netloc=None):
             100 if hi == lo else round(1 + 99 * (score - lo) / (hi - lo)))
 
 
+def compute_click_depths(pages):
+    """BFS click depth from the crawl root over the internal link graph.
+
+    Sets page["click_depth"] (None = not reachable by links, e.g. found
+    only in the sitemap) and appends a deep-page issue when >= 5 clicks.
+    """
+    ok = [p for p in pages
+          if p["is_html"] and not p["error"] and 0 < p["status"] < 400]
+    if not ok or pages[0] is not ok[0]:
+        return  # no usable root to measure from
+    site_netloc = urlsplit(ok[0]["final_url"]).netloc
+    index = {}
+    for i, page in enumerate(ok):
+        index.setdefault(page["url"], i)
+        index.setdefault(page["final_url"], i)
+    adjacency = []
+    for page in ok:
+        targets = set()
+        for href in page["links"]:
+            normalized = normalize_link(page["final_url"], href, site_netloc)
+            j = index.get(normalized)
+            if j is not None:
+                targets.add(j)
+        adjacency.append(targets)
+    depths = {0: 0}
+    queue = deque([0])
+    while queue:
+        i = queue.popleft()
+        for j in adjacency[i]:
+            if j not in depths:
+                depths[j] = depths[i] + 1
+                queue.append(j)
+    for i, page in enumerate(ok):
+        page["click_depth"] = depths.get(i)
+        if (page["click_depth"] or 0) >= DEEP_PAGE_DEPTH:
+            page["issues"].append(_issue(
+                "info", "links",
+                "Deep page (%d clicks from the homepage)"
+                % page["click_depth"],
+                "Surface important pages within 3 clicks of the homepage "
+                "via menus or internal links."))
+            page["score"] = page_score(page)
+
+
 def load_robots(origin, timeout=10):
     """Fetch <origin>/robots.txt. Returns (RobotFileParser or None, [sitemap urls])."""
     f = fetch(origin.rstrip("/") + "/robots.txt", timeout=timeout)
@@ -807,11 +984,19 @@ def crawl(root_url, max_pages=30, use_sitemap=True, follow_links=True,
             enqueue(page["final_url"], page["links"], "link")
 
     compute_link_scores(pages, site_netloc)
+    compute_click_depths(pages)
 
     # Favicon: any <link rel=icon> on the site, else the /favicon.ico fallback.
     favicon_ok = any(p.get("has_favicon_link") for p in pages)
     if not favicon_ok:
         favicon_ok = fetch(origin + "/favicon.ico", timeout=10)["status"] == 200
+
+    # GEO: which major AI crawlers does robots.txt lock out?
+    ai_crawlers_blocked = []
+    if rp:
+        ai_crawlers_blocked = [
+            bot for bot in AI_CRAWLERS
+            if not rp.can_fetch(bot, origin + "/")]
 
     # Broken-links pass over the URLs discovered but not crawled.
     broken_links = []
@@ -843,17 +1028,37 @@ def crawl(root_url, max_pages=30, use_sitemap=True, follow_links=True,
         "broken_links": broken_links,
         "checked_links": checked,
         "referrers": referrers,
+        "complete": not queue,
+        "ai_crawlers_blocked": ai_crawlers_blocked,
+        "hsts_missing": bool(
+            root_page["is_https"] and root_page["is_html"]
+            and not root_page["hsts"]),
     }
 
 
-def analyze_site(pages, favicon_ok=True, broken_links=None, referrers=None):
-    """Cross-page issues over a crawl result (list of strings)."""
+def analyze_site(pages, meta=None):
+    """Cross-page issues over a crawl result (list of strings).
+
+    `meta` is the dict returned by crawl() — favicon_ok, broken_links,
+    referrers, complete, ai_crawlers_blocked, hsts_missing are used.
+    """
+    meta = meta or {}
     issues = []
-    referrers = referrers or {}
+    referrers = meta.get("referrers") or {}
     ok = [p for p in pages
           if p["is_html"] and not p["error"] and 0 < p["status"] < 400]
-    if not favicon_ok:
+    if not meta.get("favicon_ok", True):
         issues.append("No favicon found (no <link rel=icon> and no /favicon.ico)")
+    if meta.get("hsts_missing"):
+        issues.append(
+            "No HSTS header (Strict-Transport-Security) on the homepage — "
+            "add it so browsers always use HTTPS")
+    blocked = meta.get("ai_crawlers_blocked") or []
+    if blocked:
+        issues.append(
+            "robots.txt blocks AI crawlers: %s — your content cannot be "
+            "read or cited by these AI assistants (keep only if intended)"
+            % ", ".join(blocked))
 
     def linked_from(url):
         refs = [r for r in referrers.get(url, []) if r != url]
@@ -865,11 +1070,28 @@ def analyze_site(pages, favicon_ok=True, broken_links=None, referrers=None):
         issues.append("Page in error: %s (%s)%s"
                       % (p["url"], label, linked_from(p["url"])))
 
-    for link in broken_links or []:
+    for link in meta.get("broken_links") or []:
         label = ("HTTP %d" % link["status"]) if link["status"] \
             else link.get("error", "unreachable")
         issues.append("Broken internal link: %s (%s)%s"
                       % (link["url"], label, linked_from(link["url"])))
+
+    # Orphan pages — only meaningful when every discovered URL was crawled.
+    if meta.get("complete") and referrers and len(pages) > 1:
+        orphans = []
+        for p in ok[1:] if pages[0] in ok else ok:
+            own = {p["url"], p["final_url"]}
+            refs = [
+                r for r in (referrers.get(p["url"], [])
+                            + referrers.get(p["final_url"], []))
+                if r not in own and r != "sitemap.xml"]
+            if not refs:
+                orphans.append(p["url"])
+        if orphans:
+            issues.append(
+                "%d orphan page(s) — no internal link points to them "
+                "(sitemap only): %s"
+                % (len(orphans), ", ".join(orphans[:10])))
 
     by_title = {}
     for p in ok:

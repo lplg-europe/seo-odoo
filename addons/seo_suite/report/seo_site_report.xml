@@ -122,6 +122,27 @@
                             </table>
                         </t>
 
+                        <t t-if="doc.ai_visibility_date or doc.ai_prompt_ids.mapped('result_ids')">
+                            <h3 class="mt-4">AI Visibility (GEO)</h3>
+                            <table class="table table-sm table-bordered">
+                                <tr>
+                                    <th>Brand mentioned (prompt tests)</th>
+                                    <th>Site cited (prompt tests)</th>
+                                    <th>ChatGPT mention prompts</th>
+                                    <th>AI Overview mention prompts</th>
+                                </tr>
+                                <tr>
+                                    <td><t t-out="doc.ai_visibility_pct"/>%</td>
+                                    <td><t t-out="doc.ai_cited_pct"/>%</td>
+                                    <td t-out="doc.ai_mentions_chatgpt"/>
+                                    <td t-out="doc.ai_mentions_google"/>
+                                </tr>
+                            </table>
+                            <p t-if="doc.ai_share_of_voice"
+                               style="white-space: pre-line; font-family: monospace;"
+                               t-field="doc.ai_share_of_voice"/>
+                        </t>
+
                         <h3 class="mt-4">Site-level issues</h3>
                         <p style="white-space: pre-line;" t-field="doc.site_issues"/>
 

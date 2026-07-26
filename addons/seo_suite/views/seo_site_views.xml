@@ -40,6 +40,9 @@
                             string="AI: missing metas" icon="fa-magic"
                             invisible="page_count == 0"
                             help="AI title/meta suggestions for every crawled page missing a meta description (8 pages per click, BYO key)."/>
+                    <button name="action_fetch_backlinks" type="object"
+                            string="Fetch backlinks" icon="fa-external-link"
+                            help="Backlink profile overview via DataForSEO (paid BYO key, ~$0.02)."/>
                 </header>
                 <sheet>
                     <div class="oe_button_box" name="button_box">
@@ -110,6 +113,22 @@
                                    invisible="not google_last_sync and not indexed_page_count"/>
                         </group>
                     </group>
+                    <group string="Backlinks (DataForSEO)"
+                           invisible="not bl_date">
+                        <group>
+                            <field name="bl_rank"/>
+                            <field name="bl_backlinks"/>
+                            <field name="bl_referring_domains"/>
+                            <field name="bl_referring_pages"/>
+                        </group>
+                        <group>
+                            <field name="bl_dofollow"/>
+                            <field name="bl_broken_backlinks"/>
+                            <field name="bl_spam_score"/>
+                            <field name="bl_first_seen"/>
+                            <field name="bl_date"/>
+                        </group>
+                    </group>
                     <notebook>
                         <page string="Pages" name="pages">
                             <field name="audit_ids" readonly="1">
@@ -122,6 +141,7 @@
                                     <field name="issue_count"/>
                                     <field name="score" widget="progressbar"/>
                                     <field name="link_score" optional="show"/>
+                                    <field name="click_depth" optional="hide"/>
                                     <field name="gsc_clicks" optional="show"/>
                                     <field name="gsc_position" optional="show"/>
                                     <field name="ga_views" optional="hide"/>
@@ -162,6 +182,48 @@
                                             icon="fa-search" title="Analyze live SERP (DataForSEO, paid)"/>
                                 </list>
                             </field>
+                        </page>
+                        <page string="AI Visibility" name="ai_visibility">
+                            <group>
+                                <group string="Setup">
+                                    <field name="brand_name"/>
+                                    <field name="ai_competitors"
+                                           placeholder="Competitor A, Competitor B"/>
+                                </group>
+                                <group string="Results">
+                                    <field name="ai_visibility_pct"/>
+                                    <field name="ai_cited_pct"/>
+                                    <field name="ai_mentions_chatgpt"/>
+                                    <field name="ai_mentions_google"/>
+                                    <field name="ai_visibility_date"/>
+                                </group>
+                            </group>
+                            <button name="action_ai_visibility_scan" type="object"
+                                    string="Scan AI mentions (DataForSEO)"
+                                    icon="fa-rss" class="btn-secondary mb-2"
+                                    help="Which prompts make ChatGPT / Google AI Overview cite this domain (US/en dataset) + brand share of voice vs competitors. Paid, ~$0.05-0.20."/>
+                            <field name="ai_prompt_ids"
+                                   context="{'default_site_id': id}">
+                                <list editable="bottom">
+                                    <field name="name"/>
+                                    <field name="mention_summary"/>
+                                    <field name="web_search" optional="hide"/>
+                                    <field name="last_run"/>
+                                    <button name="action_run" type="object"
+                                            icon="fa-play"
+                                            title="Ask ChatGPT, Claude, Gemini and Perplexity (paid)"/>
+                                </list>
+                            </field>
+                            <group string="Prompts citing this domain"
+                                   invisible="not ai_mentions_detail">
+                                <field name="ai_mentions_detail" nolabel="1"
+                                       class="font-monospace"/>
+                            </group>
+                            <group string="AI share of voice"
+                                   invisible="not ai_share_of_voice">
+                                <field name="ai_share_of_voice" nolabel="1"
+                                       class="font-monospace"/>
+                            </group>
                         </page>
                         <page string="Search queries" name="search_queries"
                               invisible="not google_last_sync">
