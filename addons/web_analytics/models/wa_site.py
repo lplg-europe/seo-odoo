@@ -199,3 +199,163 @@ class WebAnalyticsSite(models.Model):
             "domain": [("site_id", "=", self.id)],
             "context": {"search_default_filter_30d": 1},
         }
+
+    # ------------------------------------------------------------------
+    # Printed report
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _report_delta(current, previous):
+        """Percent change vs the previous period, None when no baseline."""
+        if not previous:
+            return None
+        return int(round(100.0 * (current - previous) / previous))
+
+    def _report_data(self, days=30):
+        """Everything the printed traffic report needs, in one dict —
+        last `days` days vs the previous period, raw SQL over the event
+        table (aggregates the ORM cannot express)."""
+        self.ensure_one()
+        cr = self.env.cr
+        now = fields.Datetime.now()
+        since = now - timedelta(days=days)
+        prev_since = now - timedelta(days=2 * days)
+
+        def kpis(lo, hi):
+            cr.execute("""
+                SELECT COUNT(DISTINCT visitor_hash),
+                       COUNT(*) FILTER (WHERE event_type = 'pageview'),
+                       COUNT(*) FILTER (WHERE is_new_session)
+                FROM web_analytics_event
+                WHERE site_id = %s AND timestamp >= %s AND timestamp < %s
+            """, (self.id, lo, hi))
+            visitors, pageviews, sessions = cr.fetchone()
+            cr.execute("""
+                WITH s AS (
+                    SELECT session_id,
+                           COUNT(*) FILTER (WHERE event_type = 'pageview')
+                               AS pv,
+                           EXTRACT(EPOCH FROM MAX(timestamp) - MIN(timestamp))
+                               AS d
+                    FROM web_analytics_event
+                    WHERE site_id = %s AND timestamp >= %s AND timestamp < %s
+                    GROUP BY session_id)
+                SELECT COALESCE(ROUND(100.0 * COUNT(*) FILTER (WHERE pv <= 1)
+                                / NULLIF(COUNT(*), 0)), 0),
+                       COALESCE(ROUND(AVG(d)), 0)
+                FROM s
+            """, (self.id, lo, hi))
+            bounce, duration = cr.fetchone()
+            return {
+                "visitors": visitors or 0, "pageviews": pageviews or 0,
+                "sessions": sessions or 0, "bounce": int(bounce or 0),
+                "duration": int(duration or 0),
+            }
+
+        current = kpis(since, now)
+        previous = kpis(prev_since, since)
+
+        cr.execute("""
+            SELECT timestamp::date,
+                   COUNT(*) FILTER (WHERE event_type = 'pageview')
+            FROM web_analytics_event
+            WHERE site_id = %s AND timestamp >= %s
+            GROUP BY 1
+        """, (self.id, since))
+        by_day = dict(cr.fetchall())
+        series = []
+        for offset in range(days):
+            day = (now - timedelta(days=days - 1 - offset)).date()
+            series.append({"day": day, "pageviews": by_day.get(day, 0)})
+        max_pageviews = max([s["pageviews"] for s in series] + [1])
+
+        def top(query, params, limit):
+            cr.execute(query + " LIMIT %d" % limit, params)
+            return cr.fetchall()
+
+        top_pages = top("""
+            SELECT path, COUNT(*), COUNT(DISTINCT visitor_hash)
+            FROM web_analytics_event
+            WHERE site_id = %s AND timestamp >= %s
+              AND event_type = 'pageview' AND COALESCE(path, '') != ''
+            GROUP BY path ORDER BY 2 DESC
+        """, (self.id, since), 10)
+
+        channels = top("""
+            SELECT COALESCE(NULLIF(channel, ''), 'Direct'), COUNT(*)
+            FROM web_analytics_event
+            WHERE site_id = %s AND timestamp >= %s AND is_new_session
+            GROUP BY 1 ORDER BY 2 DESC
+        """, (self.id, since), 12)
+
+        referrers = top("""
+            SELECT referrer_host, COUNT(*)
+            FROM web_analytics_event
+            WHERE site_id = %s AND timestamp >= %s AND is_new_session
+              AND COALESCE(referrer_host, '') != ''
+            GROUP BY 1 ORDER BY 2 DESC
+        """, (self.id, since), 10)
+
+        campaigns = top("""
+            SELECT utm_campaign, COUNT(*)
+            FROM web_analytics_event
+            WHERE site_id = %s AND timestamp >= %s AND is_new_session
+              AND COALESCE(utm_campaign, '') != ''
+            GROUP BY 1 ORDER BY 2 DESC
+        """, (self.id, since), 8)
+
+        devices = top("""
+            SELECT COALESCE(device_type, 'unknown'),
+                   COUNT(DISTINCT visitor_hash)
+            FROM web_analytics_event
+            WHERE site_id = %s AND timestamp >= %s
+            GROUP BY 1 ORDER BY 2 DESC
+        """, (self.id, since), 5)
+
+        countries = top("""
+            SELECT country, COUNT(DISTINCT visitor_hash)
+            FROM web_analytics_event
+            WHERE site_id = %s AND timestamp >= %s
+              AND COALESCE(country, '') != ''
+            GROUP BY 1 ORDER BY 2 DESC
+        """, (self.id, since), 8)
+
+        custom_events = top("""
+            SELECT event_name, COUNT(*)
+            FROM web_analytics_event
+            WHERE site_id = %s AND timestamp >= %s
+              AND event_type NOT IN ('pageview', 'performance')
+              AND COALESCE(event_name, '') != ''
+            GROUP BY 1 ORDER BY 2 DESC
+        """, (self.id, since), 8)
+
+        cr.execute("""
+            SELECT COALESCE(PERCENTILE_CONT(0.75)
+                   WITHIN GROUP (ORDER BY lcp_ms), 0)
+            FROM web_analytics_event
+            WHERE site_id = %s AND timestamp >= %s
+              AND event_type = 'performance' AND lcp_ms > 0
+        """, (self.id, since))
+        lcp_p75 = int(cr.fetchone()[0] or 0)
+
+        goals = [{
+            "name": goal.name, "conversions": goal.conversions_30d,
+            "rate": goal.conversion_rate,
+        } for goal in self.goal_ids.filtered("active")]
+
+        return {
+            "days": days, "since": since, "until": now,
+            "current": current, "previous": previous,
+            "deltas": {key: self._report_delta(current[key], previous[key])
+                       for key in current},
+            "series": series, "max_pageviews": max_pageviews,
+            "top_pages": top_pages,
+            "channels": channels,
+            "channel_total": sum(n for _, n in channels) or 1,
+            "referrers": referrers, "campaigns": campaigns,
+            "devices": devices,
+            "device_total": sum(n for _, n in devices) or 1,
+            "countries": countries, "custom_events": custom_events,
+            "lcp_p75": lcp_p75, "goals": goals,
+            "conversions_total": sum(g["conversions"] for g in goals),
+        }

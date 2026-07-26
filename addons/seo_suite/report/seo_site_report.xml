@@ -25,8 +25,10 @@
     </record>
 
     <!-- ============================ Print action ============================ -->
+    <!-- Overview: the state-of-play report used to win a prospect
+         (Quick audit wizard prints this one). -->
     <record id="action_report_seo_site" model="ir.actions.report">
-        <field name="name">SEO Audit Report</field>
+        <field name="name">SEO Audit (overview)</field>
         <field name="model">seo.site</field>
         <field name="report_type">qweb-pdf</field>
         <field name="report_name">seo_suite.report_seo_site</field>
@@ -37,11 +39,36 @@
         <field name="paperformat_id" ref="paperformat_seo_site"/>
     </record>
 
-    <!-- ============================ Wrapper ============================ -->
+    <!-- Complete: same report plus the solutions — how-to-fix
+         recommendations, keyword opportunities, ready-to-apply AI metas.
+         This is what a signed client receives (email reports use it). -->
+    <record id="action_report_seo_site_full" model="ir.actions.report">
+        <field name="name">SEO Audit (complete)</field>
+        <field name="model">seo.site</field>
+        <field name="report_type">qweb-pdf</field>
+        <field name="report_name">seo_suite.report_seo_site_full</field>
+        <field name="report_file">seo_suite.report_seo_site_full</field>
+        <field name="binding_model_id" ref="model_seo_site"/>
+        <field name="binding_type">report</field>
+        <field name="print_report_name">'SEO Audit complete - %s' % (object.name)</field>
+        <field name="paperformat_id" ref="paperformat_seo_site"/>
+    </record>
+
+    <!-- ============================ Wrappers ============================ -->
     <template id="report_seo_site">
         <t t-call="web.html_container">
             <t t-foreach="docs" t-as="doc">
                 <t t-call="seo_suite.report_seo_site_document"/>
+            </t>
+        </t>
+    </template>
+
+    <template id="report_seo_site_full">
+        <t t-call="web.html_container">
+            <t t-foreach="docs" t-as="doc">
+                <t t-call="seo_suite.report_seo_site_document">
+                    <t t-set="full" t-value="True"/>
+                </t>
             </t>
         </t>
     </template>
@@ -123,6 +150,10 @@
                 .seo .dot-warn { background:#D97706; }
                 .seo .dot-info { background:#2D74C4; }
                 .seo .issue-more { color:#9C9A92; font-size:8pt; padding-top:1px; }
+                .seo .fix { color:#444441; font-size:8pt; white-space:pre-line; padding-top:2px; font-weight:normal; }
+                .seo .bucket-label { font-weight:bold; font-size:10pt; margin:10px 0 2px; page-break-after:avoid; }
+                .seo .bucket-advice { color:#6B7280; font-size:8.5pt; margin:0 0 5px; page-break-after:avoid; }
+                .seo .ai-meta { font-size:8pt; }
                 .seo .site-line-label { font-weight:bold; }
                 .seo .site-line-urls { color:#6B7280; font-family:monospace; font-size:7.5pt; word-break:break-all; padding-top:1px; }
                 .seo .kw { font-weight:bold; }
@@ -155,6 +186,7 @@
                         <td style="width:45%; vertical-align:top;">
                             <div class="title">SEO AUDIT</div>
                             <div style="text-align:right; margin-top:5px;">
+                                <span t-if="full" class="type-badge" style="background:#E3EEFA; color:#1D5CA3; margin-right:4px;">Complete</span>
                                 <span t-attf-class="type-badge type-{{score_cls}}"><t t-out="score_label"/></span>
                             </div>
                             <div class="title-meta">
@@ -244,10 +276,12 @@
                     </tr>
                 </table>
 
-                <!-- Top issues -->
+                <!-- Top issues (complete report: with our recommendations) -->
                 <t t-set="top_issues" t-value="doc._report_top_issues()"/>
                 <t t-if="top_issues">
-                    <div class="section">Top issues to fix</div>
+                    <div class="section">
+                        Top issues to fix<t t-if="full"> — our recommendations</t>
+                    </div>
                     <table class="lines">
                         <thead>
                             <tr>
@@ -261,7 +295,10 @@
                                 <t t-set="sev_cls" t-value="{'critical': 'crit', 'warning': 'warn', 'info': 'info'}[ti['severity']]"/>
                                 <tr style="page-break-inside:avoid;">
                                     <td><span t-attf-class="pill pill-{{sev_cls}}"><t t-out="ti['severity']"/></span></td>
-                                    <td><t t-out="ti['message']"/></td>
+                                    <td>
+                                        <div style="font-weight:bold;"><t t-out="ti['message']"/></div>
+                                        <div t-if="full and ti.get('how_to_fix')" class="fix"><t t-out="ti['how_to_fix']"/></div>
+                                    </td>
                                     <td class="num" style="font-weight:bold;"><t t-out="ti['page_count']"/></td>
                                 </tr>
                             </t>
@@ -295,6 +332,64 @@
                         </t>
                     </tbody>
                 </table>
+
+                <!-- Keyword opportunities (complete report) -->
+                <t t-if="full">
+                    <t t-set="kw_buckets" t-value="doc._report_keyword_buckets()"/>
+                    <t t-if="kw_buckets">
+                        <div class="section">Keyword opportunities — where to push</div>
+                        <t t-foreach="kw_buckets" t-as="bucket">
+                            <div class="bucket-label"><t t-out="bucket['label']"/> (<t t-out="len(bucket['keywords'])"/>)</div>
+                            <div class="bucket-advice"><t t-out="bucket['advice']"/></div>
+                            <table class="lines">
+                                <thead>
+                                    <tr>
+                                        <th>Keyword</th>
+                                        <th class="num" style="width:12%;">Position</th>
+                                        <th class="num" style="width:14%;">Volume/month</th>
+                                        <th class="num" style="width:13%;">Clicks (28d)</th>
+                                        <th style="width:30%;">Ranking page</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <t t-foreach="bucket['keywords']" t-as="kw">
+                                        <tr style="page-break-inside:avoid;">
+                                            <td class="kw"><t t-out="kw['name']"/></td>
+                                            <td class="num" style="font-weight:bold;"><t t-out="'%.1f' % kw['position']"/></td>
+                                            <td class="num"><t t-out="kw['volume'] or '-'"/></td>
+                                            <td class="num"><t t-out="kw['clicks']"/></td>
+                                            <td class="path"><t t-out="kw['best_page']"/></td>
+                                        </tr>
+                                    </t>
+                                </tbody>
+                            </table>
+                        </t>
+                    </t>
+
+                    <!-- Ready-to-apply AI metas (complete report) -->
+                    <t t-set="ai_rows" t-value="doc._report_ai_meta_rows()"/>
+                    <t t-if="ai_rows">
+                        <div class="section">Ready-to-apply title &amp; meta rewrites</div>
+                        <table class="lines">
+                            <thead>
+                                <tr>
+                                    <th style="width:26%;">Page</th>
+                                    <th style="width:32%;">Suggested title</th>
+                                    <th>Suggested meta description</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <t t-foreach="ai_rows" t-as="row">
+                                    <tr style="page-break-inside:avoid;">
+                                        <td class="path"><t t-out="row['path']"/></td>
+                                        <td class="ai-meta" style="font-weight:bold;"><t t-out="row['title']"/></td>
+                                        <td class="ai-meta"><t t-out="row['meta']"/></td>
+                                    </tr>
+                                </t>
+                            </tbody>
+                        </table>
+                    </t>
+                </t>
 
                 <!-- Site-level issues -->
                 <t t-set="site_lines" t-value="[l.strip() for l in (doc.site_issues or '').splitlines() if l.strip()]"/>

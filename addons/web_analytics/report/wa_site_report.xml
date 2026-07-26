@@ -1,0 +1,396 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+        WEB ANALYTICS REPORT - self-contained QWeb PDF (Odoo 19)
+        Same construction as the seo_suite audit report: own header/footer
+        in the body (no web.external_layout), dedicated paperformat,
+        border-collapse:separate everywhere (wkhtmltopdf hairline bug).
+    -->
+
+    <record id="paperformat_wa_site" model="report.paperformat">
+        <field name="name">Web Analytics (A4)</field>
+        <field name="format">A4</field>
+        <field name="orientation">Portrait</field>
+        <field name="margin_top">12</field>
+        <field name="margin_bottom">14</field>
+        <field name="margin_left">14</field>
+        <field name="margin_right">14</field>
+        <field name="header_line" eval="False"/>
+        <field name="header_spacing">5</field>
+        <field name="dpi">90</field>
+    </record>
+
+    <record id="action_report_wa_site" model="ir.actions.report">
+        <field name="name">Traffic Report (30 days)</field>
+        <field name="model">web.analytics.site</field>
+        <field name="report_type">qweb-pdf</field>
+        <field name="report_name">web_analytics.report_wa_site</field>
+        <field name="report_file">web_analytics.report_wa_site</field>
+        <field name="binding_model_id" ref="model_web_analytics_site"/>
+        <field name="binding_type">report</field>
+        <field name="print_report_name">'Traffic Report - %s' % (object.name)</field>
+        <field name="paperformat_id" ref="paperformat_wa_site"/>
+    </record>
+
+    <template id="report_wa_site">
+        <t t-call="web.html_container">
+            <t t-foreach="docs" t-as="doc">
+                <t t-call="web_analytics.report_wa_site_document"/>
+            </t>
+        </t>
+    </template>
+
+    <template id="report_wa_site_document">
+        <t t-set="brand" t-value="res_company.primary_color or '#31408F'"/>
+        <t t-set="d" t-value="doc._report_data()"/>
+        <t t-set="cur" t-value="d['current']"/>
+        <t t-set="deltas" t-value="d['deltas']"/>
+
+        <div class="article" t-att-data-oe-model="doc and doc._name" t-att-data-oe-id="doc and doc.id">
+            <style>
+                .wa { color:#1F2933; font-size:9.5pt; line-height:1.4; }
+                /* border-collapse:collapse makes wkhtmltopdf paint phantom
+                   hairlines on some hosts - keep separate everywhere. */
+                .wa table { border-collapse:separate !important; border-spacing:0 !important; border:0 !important; border-color:transparent; }
+                .wa td, .wa th { border:0 !important; border-color:transparent; }
+                .wa .est-name { font-size:12pt; font-weight:bold; }
+                .wa .est-sub { font-size:8.5pt; color:#6B7280; }
+                .wa .title { font-size:20pt; font-weight:bold; color:<t t-out="brand"/>; text-align:right; letter-spacing:.5px; }
+                .wa .title-meta { font-size:9pt; color:#6B7280; text-align:right; margin-top:2px; }
+                .wa .title-meta b { color:#1F2933; }
+                .wa .type-badge { display:inline-block; padding:3px 12px; border-radius:12px; font-size:9pt; font-weight:bold; letter-spacing:.5px; text-transform:uppercase; background:#E3EEFA; color:#1D5CA3; }
+                .wa .rule { border-bottom:2px solid <t t-out="brand"/>; margin:10px 0 14px; }
+                .wa .section { font-size:11pt; font-weight:bold; color:<t t-out="brand"/>; margin:18px 0 7px; border-bottom:1px solid #D7DEDC; padding-bottom:3px; page-break-after:avoid; }
+                .wa .muted { color:#6B7280; }
+                .wa table.kpis { width:100%; border-spacing:8px 0 !important; margin:2px 0; }
+                .wa td.kpi { width:25%; border:1px solid #E3E6E5 !important; border-radius:5px; background:#FBFCFB; padding:8px 12px; vertical-align:top; }
+                .wa .kpi-v { font-size:15pt; font-weight:bold; }
+                .wa .kpi-l { font-size:7.5pt; text-transform:uppercase; letter-spacing:.4px; color:#6B7280; margin-top:1px; }
+                .wa .d-up { font-size:8pt; font-weight:bold; color:#0F6E56; }
+                .wa .d-down { font-size:8pt; font-weight:bold; color:#A32D2D; }
+                .wa .d-flat { font-size:8pt; font-weight:bold; color:#9C9A92; }
+                .wa .good { color:#0F6E56; }
+                .wa .mid { color:#854F0B; }
+                .wa .bad { color:#A32D2D; }
+                .wa table.chart { width:100%; height:52px; }
+                .wa table.chart td { vertical-align:bottom; padding:0 1px; }
+                .wa .chart-bar { background:<t t-out="brand"/>; border-radius:1px 1px 0 0; }
+                .wa .chart-x { font-size:7pt; color:#9C9A92; padding-top:2px; }
+                .wa table.lines { width:100%; border:1px solid #C3CDCA !important; }
+                .wa table.lines thead th { background:<t t-out="brand"/>; color:#FFF; font-size:8pt; font-weight:bold; text-align:left; padding:6px 8px; text-transform:uppercase; letter-spacing:.3px; border-right:1px solid rgba(255,255,255,.22) !important; }
+                .wa table.lines thead th.num { text-align:right; }
+                .wa table.lines tbody td { border-bottom:1px solid #E5E7EB !important; border-right:1px solid #ECEEED !important; padding:5px 8px; vertical-align:middle; font-size:9pt; }
+                .wa table.lines thead th:last-child, .wa table.lines tbody td:last-child { border-right:0 !important; }
+                .wa table.lines tbody tr:last-child td { border-bottom:0 !important; }
+                .wa table.lines tbody tr:nth-child(even) td { background:#FAFAF7; }
+                .wa table.lines td.num { text-align:right; }
+                .wa table.lines td.path { font-family:monospace; font-size:8pt; word-break:break-all; }
+                .wa .share { background:#E5E7EB; border-radius:4px; height:7px; }
+                .wa .share-fill { border-radius:4px; height:7px; background:<t t-out="brand"/>; }
+                .wa .pill { display:inline-block; padding:1px 8px; border-radius:10px; font-size:8pt; font-weight:bold; background:#F1EFE8; color:#5F5E5A; margin-right:4px; }
+                .wa .mono-box { border:1px solid #E3E6E5 !important; border-radius:5px; background:#FBFCFB; padding:8px 12px; margin-top:6px; font-size:7.5pt; font-family:monospace; white-space:pre; overflow:hidden; }
+                .wa .closing { margin-top:14px; border-top:1px solid #E5E7EB; padding-top:6px; font-size:7.5pt; color:#9C9A92; font-style:italic; }
+            </style>
+
+            <div class="wa">
+                <!-- Header -->
+                <table style="width:100%;">
+                    <tr>
+                        <td style="width:55%; vertical-align:top;">
+                            <img t-if="res_company.logo"
+                                 t-att-src="image_data_uri(res_company.logo)"
+                                 style="max-height:45px; max-width:220px; margin-bottom:6px;"/>
+                            <div class="est-name" t-field="res_company.name"/>
+                            <div class="est-sub">
+                                <span t-field="res_company.partner_id"
+                                      t-options='{"widget": "contact", "fields": ["address"], "no_marker": true}'/>
+                                <span t-if="res_company.vat"> · VAT <span t-field="res_company.vat"/></span>
+                            </div>
+                        </td>
+                        <td style="width:45%; vertical-align:top;">
+                            <div class="title">WEB ANALYTICS</div>
+                            <div style="text-align:right; margin-top:5px;">
+                                <span class="type-badge">Last <t t-out="d['days']"/> days</span>
+                            </div>
+                            <div class="title-meta">
+                                <b><t t-out="doc.name"/></b>
+                                · <span t-out="d['since']" t-options='{"widget": "date"}'/> →
+                                <span t-out="d['until']" t-options='{"widget": "date"}'/>
+                            </div>
+                            <div class="title-meta">
+                                Cookieless analytics — no personal data stored.
+                            </div>
+                        </td>
+                    </tr>
+                </table>
+                <div class="rule"/>
+
+                <!-- KPI row 1 -->
+                <table class="kpis" style="page-break-inside:avoid;">
+                    <tr>
+                        <td class="kpi">
+                            <div class="kpi-v">
+                                <t t-out="cur['visitors']"/>
+                                <span t-if="deltas['visitors'] is not None"
+                                      t-attf-class="d-{{'up' if deltas['visitors'] &gt; 0 else ('down' if deltas['visitors'] &lt; 0 else 'flat')}}">
+                                    <t t-out="'%+d' % deltas['visitors']"/>%
+                                </span>
+                            </div>
+                            <div class="kpi-l">Unique visitors</div>
+                        </td>
+                        <td class="kpi">
+                            <div class="kpi-v">
+                                <t t-out="cur['pageviews']"/>
+                                <span t-if="deltas['pageviews'] is not None"
+                                      t-attf-class="d-{{'up' if deltas['pageviews'] &gt; 0 else ('down' if deltas['pageviews'] &lt; 0 else 'flat')}}">
+                                    <t t-out="'%+d' % deltas['pageviews']"/>%
+                                </span>
+                            </div>
+                            <div class="kpi-l">Pageviews</div>
+                        </td>
+                        <td class="kpi">
+                            <div class="kpi-v">
+                                <t t-out="cur['sessions']"/>
+                                <span t-if="deltas['sessions'] is not None"
+                                      t-attf-class="d-{{'up' if deltas['sessions'] &gt; 0 else ('down' if deltas['sessions'] &lt; 0 else 'flat')}}">
+                                    <t t-out="'%+d' % deltas['sessions']"/>%
+                                </span>
+                            </div>
+                            <div class="kpi-l">Sessions</div>
+                        </td>
+                        <td class="kpi">
+                            <div class="kpi-v">
+                                <t t-out="cur['bounce']"/>%
+                                <!-- for bounce, down is the good direction -->
+                                <span t-if="deltas['bounce'] is not None"
+                                      t-attf-class="d-{{'up' if deltas['bounce'] &lt; 0 else ('down' if deltas['bounce'] &gt; 0 else 'flat')}}">
+                                    <t t-out="'%+d' % deltas['bounce']"/>%
+                                </span>
+                            </div>
+                            <div class="kpi-l">Bounce rate</div>
+                        </td>
+                    </tr>
+                </table>
+
+                <!-- KPI row 2 -->
+                <table class="kpis" style="page-break-inside:avoid; margin-top:8px;">
+                    <tr>
+                        <td class="kpi">
+                            <div class="kpi-v"><t t-out="'%d:%02d' % (cur['duration'] // 60, cur['duration'] % 60)"/></div>
+                            <div class="kpi-l">Avg session (min)</div>
+                        </td>
+                        <td class="kpi">
+                            <t t-if="d['lcp_p75']">
+                                <div t-attf-class="kpi-v {{'good' if d['lcp_p75'] &lt; 2500 else ('mid' if d['lcp_p75'] &lt; 4000 else 'bad')}}">
+                                    <t t-out="'%.1fs' % (d['lcp_p75'] / 1000.0)"/>
+                                </div>
+                                <div class="kpi-l">LCP p75 (good &lt; 2.5s)</div>
+                            </t>
+                            <t t-else="">
+                                <div class="kpi-v muted">n/a</div>
+                                <div class="kpi-l">LCP p75</div>
+                            </t>
+                        </td>
+                        <td class="kpi">
+                            <div class="kpi-v"><t t-out="d['conversions_total']"/></div>
+                            <div class="kpi-l">Goal conversions</div>
+                        </td>
+                        <td class="kpi">
+                            <div class="kpi-v" style="font-size:11pt; padding-top:3px;"><t t-out="d['channels'][0][0] if d['channels'] else '-'"/></div>
+                            <div class="kpi-l">Top channel</div>
+                        </td>
+                    </tr>
+                </table>
+
+                <!-- Daily traffic -->
+                <div class="section">Daily pageviews</div>
+                <table class="chart" style="page-break-inside:avoid;">
+                    <tr>
+                        <t t-foreach="d['series']" t-as="s">
+                            <td t-attf-style="width:{{'%.2f' % (100.0 / d['days'])}}%;">
+                                <div class="chart-bar"
+                                     t-attf-style="height:{{max(2, round(48.0 * s['pageviews'] / d['max_pageviews']))}}px;"></div>
+                            </td>
+                        </t>
+                    </tr>
+                </table>
+                <table style="width:100%;">
+                    <tr>
+                        <td class="chart-x"><t t-out="d['series'][0]['day'].strftime('%d %b') if d['series'] else ''"/></td>
+                        <td class="chart-x" style="text-align:right;"><t t-out="d['series'][-1]['day'].strftime('%d %b') if d['series'] else ''"/></td>
+                    </tr>
+                </table>
+
+                <!-- Top pages -->
+                <t t-if="d['top_pages']">
+                    <div class="section">Top pages</div>
+                    <table class="lines">
+                        <thead>
+                            <tr>
+                                <th>Page</th>
+                                <th class="num" style="width:14%;">Views</th>
+                                <th class="num" style="width:14%;">Visitors</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <t t-foreach="d['top_pages']" t-as="row">
+                                <tr style="page-break-inside:avoid;">
+                                    <td class="path"><t t-out="row[0]"/></td>
+                                    <td class="num" style="font-weight:bold;"><t t-out="row[1]"/></td>
+                                    <td class="num"><t t-out="row[2]"/></td>
+                                </tr>
+                            </t>
+                        </tbody>
+                    </table>
+                </t>
+
+                <!-- Acquisition -->
+                <t t-if="d['channels']">
+                    <div class="section">Acquisition channels</div>
+                    <table class="lines">
+                        <thead>
+                            <tr>
+                                <th style="width:26%;">Channel</th>
+                                <th class="num" style="width:14%;">Sessions</th>
+                                <th>Share</th>
+                                <th class="num" style="width:10%;"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <t t-foreach="d['channels']" t-as="row">
+                                <t t-set="share" t-value="round(100.0 * row[1] / d['channel_total'])"/>
+                                <tr style="page-break-inside:avoid;">
+                                    <td style="font-weight:bold;"><t t-out="row[0]"/></td>
+                                    <td class="num"><t t-out="row[1]"/></td>
+                                    <td>
+                                        <div class="share">
+                                            <div class="share-fill" t-attf-style="width:{{max(2, share)}}%;"></div>
+                                        </div>
+                                    </td>
+                                    <td class="num" style="font-weight:bold;"><t t-out="share"/>%</td>
+                                </tr>
+                            </t>
+                        </tbody>
+                    </table>
+                </t>
+
+                <!-- Referrers -->
+                <t t-if="d['referrers']">
+                    <div class="section">Top referrers</div>
+                    <table class="lines">
+                        <thead>
+                            <tr>
+                                <th>Referrer</th>
+                                <th class="num" style="width:16%;">Sessions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <t t-foreach="d['referrers']" t-as="row">
+                                <tr style="page-break-inside:avoid;">
+                                    <td class="path"><t t-out="row[0]"/></td>
+                                    <td class="num" style="font-weight:bold;"><t t-out="row[1]"/></td>
+                                </tr>
+                            </t>
+                        </tbody>
+                    </table>
+                </t>
+
+                <!-- Campaigns -->
+                <t t-if="d['campaigns']">
+                    <div class="section">Campaigns (UTM)</div>
+                    <table class="lines">
+                        <thead>
+                            <tr>
+                                <th>Campaign</th>
+                                <th class="num" style="width:16%;">Sessions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <t t-foreach="d['campaigns']" t-as="row">
+                                <tr style="page-break-inside:avoid;">
+                                    <td><t t-out="row[0]"/></td>
+                                    <td class="num" style="font-weight:bold;"><t t-out="row[1]"/></td>
+                                </tr>
+                            </t>
+                        </tbody>
+                    </table>
+                </t>
+
+                <!-- Devices & countries -->
+                <div class="section">Audience</div>
+                <div style="page-break-inside:avoid;">
+                    <t t-foreach="d['devices']" t-as="dev">
+                        <span class="pill">
+                            <t t-out="dev[0]"/> · <t t-out="round(100.0 * dev[1] / d['device_total'])"/>%
+                        </span>
+                    </t>
+                    <t t-if="d['countries']">
+                        <span class="muted" style="font-size:8pt;"> — top countries: </span>
+                        <t t-foreach="d['countries']" t-as="ctry">
+                            <span class="pill"><t t-out="ctry[0]"/> · <t t-out="ctry[1]"/></span>
+                        </t>
+                    </t>
+                </div>
+
+                <!-- Custom events -->
+                <t t-if="d['custom_events']">
+                    <div class="section">Custom events</div>
+                    <table class="lines">
+                        <thead>
+                            <tr>
+                                <th>Event</th>
+                                <th class="num" style="width:16%;">Count</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <t t-foreach="d['custom_events']" t-as="row">
+                                <tr style="page-break-inside:avoid;">
+                                    <td><t t-out="row[0]"/></td>
+                                    <td class="num" style="font-weight:bold;"><t t-out="row[1]"/></td>
+                                </tr>
+                            </t>
+                        </tbody>
+                    </table>
+                </t>
+
+                <!-- Goals -->
+                <t t-if="d['goals']">
+                    <div class="section">Goals</div>
+                    <table class="lines">
+                        <thead>
+                            <tr>
+                                <th>Goal</th>
+                                <th class="num" style="width:18%;">Conversions (30d)</th>
+                                <th class="num" style="width:18%;">Conversion rate</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <t t-foreach="d['goals']" t-as="goal">
+                                <tr style="page-break-inside:avoid;">
+                                    <td style="font-weight:bold;"><t t-out="goal['name']"/></td>
+                                    <td class="num"><t t-out="goal['conversions']"/></td>
+                                    <td class="num"><t t-out="'%.1f' % goal['rate']"/>%</td>
+                                </tr>
+                            </t>
+                        </tbody>
+                    </table>
+                </t>
+
+                <!-- Retention -->
+                <t t-if="doc.retention_table">
+                    <div class="section">Weekly retention cohorts</div>
+                    <div class="mono-box"><t t-out="doc.retention_table"/></div>
+                </t>
+
+                <div class="closing">
+                    Privacy-first, cookieless analytics — data is collected and stored on this
+                    Odoo instance only, no third party involved. Generated with SEO Suite for Odoo.
+                </div>
+            </div>
+        </div>
+
+        <div class="footer" style="text-align:center; font-size:8pt; color:#9C9A92; padding-top:4px;">
+            Page <span class="page"/> / <span class="topage"/>
+        </div>
+    </template>
+</odoo>

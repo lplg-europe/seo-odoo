@@ -829,7 +829,8 @@ class SeoSite(models.Model):
                 "Set the report recipients on the site first.")
         if not self.last_crawl:
             raise UserError("Crawl the site at least once first.")
-        report = self.env.ref("seo_suite.action_report_seo_site")
+        # paying clients get the complete report (recommendations included)
+        report = self.env.ref("seo_suite.action_report_seo_site_full")
         attachments = []
         try:
             content, report_type = self.env["ir.actions.report"]\
@@ -1015,3 +1016,48 @@ class SeoSite(models.Model):
         self.ensure_one()
         return [self._report_path(a.name) for a in self.audit_ids.sorted("name")
                 if not a.issue_ids and not a.error and a.status_code < 400]
+
+    def _report_keyword_buckets(self):
+        """Tracked keywords grouped by opportunity level for the complete
+        report — where to push first."""
+        self.ensure_one()
+        buckets = [
+            ("Almost on the podium (positions 4-10)",
+             "Quick wins: strengthen internal links to the target page and "
+             "refresh its content — a small push can reach the top 3.", 4, 10),
+            ("Page 2 (positions 11-20)",
+             "One good optimization away from page 1: rewrite title/meta, "
+             "deepen the content, add internal links.", 11, 20),
+            ("Visible (positions 21-50)",
+             "Longer-term work: dedicated content and backlinks.", 21, 50),
+        ]
+        result = []
+        for label, advice, lo, hi in buckets:
+            keywords = self.keyword_ids.filtered(
+                lambda k: k.position and lo <= k.position <= hi
+            ).sorted("position")
+            if keywords:
+                result.append({"label": label, "advice": advice, "keywords": [{
+                    "name": k.name, "position": k.position,
+                    "volume": k.volume, "clicks": k.clicks,
+                    "best_page": self._report_path(k.best_page)
+                    if k.best_page else "",
+                } for k in keywords]})
+        return result
+
+    def _report_ai_meta_rows(self, limit=15):
+        """Stored AI title/meta suggestions not applied yet — the
+        ready-to-use deliverable of the complete report."""
+        self.ensure_one()
+        rows = []
+        for audit in self.audit_ids.sorted(key=lambda a: (a.score, a.name)):
+            if not (audit.ai_title or audit.ai_meta_description):
+                continue
+            rows.append({
+                "path": self._report_path(audit.name),
+                "title": audit.ai_title or "",
+                "meta": audit.ai_meta_description or "",
+            })
+            if len(rows) >= limit:
+                break
+        return rows
