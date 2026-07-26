@@ -942,3 +942,76 @@ class SeoSite(models.Model):
             result.append(group)
         result.sort(key=lambda g: (-g["critical"], -g["warning"], -g["count"]))
         return result
+
+    _SEV_ORDER = {"critical": 0, "warning": 1, "info": 2}
+
+    def _report_path(self, url):
+        """Short path of a page URL for the printed report — the domain is
+        already in the report header, repeating it 50 times is noise."""
+        base = (self.name or "").rstrip("/")
+        if base and url.startswith(base):
+            return url[len(base):] or "/"
+        return url
+
+    def _report_top_issues(self, limit=12):
+        """Recurring issues across the whole site, worst first — the
+        'fix these first' list of the printed report. Issues whose message
+        only differs by a number ("Low text/HTML ratio (7%)" vs "(6%)")
+        are counted together."""
+        self.ensure_one()
+        groups = {}
+        for issue in self.issue_ids:
+            key = re.sub(r"[\d.,]+", "#", issue.message or "")
+            group = groups.setdefault(key, {
+                "messages": set(), "severity": issue.severity,
+                "how_to_fix": issue.how_to_fix, "pages": set()})
+            group["messages"].add(issue.message)
+            group["pages"].add(issue.audit_id.id)
+            if self._SEV_ORDER[issue.severity] < \
+                    self._SEV_ORDER[group["severity"]]:
+                group["severity"] = issue.severity
+        result = []
+        for group in groups.values():
+            messages = group.pop("messages")
+            label = next(iter(messages))
+            if len(messages) > 1:
+                # the numbers vary per page -> strip the specifics
+                label = re.sub(r"\s*\([^)]*\)", "", label)
+                label = re.sub(r"^\d+\s*", "", label).strip()
+                label = label[:1].upper() + label[1:]
+            group["message"] = label
+            group["page_count"] = len(group.pop("pages"))
+            result.append(group)
+        result.sort(key=lambda g: (
+            self._SEV_ORDER[g["severity"]], -g["page_count"]))
+        return result[:limit]
+
+    def _report_page_rows(self, max_issues=3):
+        """Page-detail rows for the printed report: only pages that need
+        work, worst first, at most `max_issues` issue lines each — the full
+        list lives in the app, the PDF is a summary."""
+        self.ensure_one()
+        rows = []
+        for audit in self.audit_ids.sorted(key=lambda a: (a.score, a.name)):
+            if not audit.issue_ids and not audit.error \
+                    and audit.status_code < 400:
+                continue
+            issues = sorted(audit.issue_ids,
+                            key=lambda i: self._SEV_ORDER[i.severity])
+            rows.append({
+                "path": self._report_path(audit.name),
+                "status": audit.status_code,
+                "score": audit.score,
+                "error": audit.error,
+                "issues": [{"message": i.message, "severity": i.severity}
+                           for i in issues[:max_issues]],
+                "more": max(0, len(issues) - max_issues),
+            })
+        return rows
+
+    def _report_clean_pages(self):
+        """Paths of the audited pages with nothing to report — one
+        reassuring green line instead of empty table rows."""
+        self.ensure_one()
+        return [self._report_path(a.name) for a in self.audit_ids.sorted("name")
+                if not a.issue_ids and not a.error and a.status_code < 400]

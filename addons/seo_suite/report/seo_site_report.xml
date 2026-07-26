@@ -1,6 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
+    <!--
+        SEO AUDIT REPORT - self-contained QWeb PDF (Odoo 19)
+        Carries its own header/footer in the body (no web.external_layout):
+        works out of the box on any database, even before the company
+        configured its document layout.
+    -->
 
+    <!-- ============================ Paperformat ============================ -->
+    <!-- Dedicated A4 format with balanced margins. base.paperformat_euro
+         reserves 40 mm at the top for a page header this report doesn't use
+         (hence a big empty top band) and only 7 mm left/right. -->
+    <record id="paperformat_seo_site" model="report.paperformat">
+        <field name="name">SEO Audit (A4)</field>
+        <field name="format">A4</field>
+        <field name="orientation">Portrait</field>
+        <field name="margin_top">12</field>
+        <field name="margin_bottom">14</field>
+        <field name="margin_left">14</field>
+        <field name="margin_right">14</field>
+        <field name="header_line" eval="False"/>
+        <field name="header_spacing">5</field>
+        <field name="dpi">90</field>
+    </record>
+
+    <!-- ============================ Print action ============================ -->
     <record id="action_report_seo_site" model="ir.actions.report">
         <field name="name">SEO Audit Report</field>
         <field name="model">seo.site</field>
@@ -10,167 +34,408 @@
         <field name="binding_model_id" ref="model_seo_site"/>
         <field name="binding_type">report</field>
         <field name="print_report_name">'SEO Audit - %s' % (object.name)</field>
+        <field name="paperformat_id" ref="paperformat_seo_site"/>
     </record>
 
+    <!-- ============================ Wrapper ============================ -->
     <template id="report_seo_site">
         <t t-call="web.html_container">
             <t t-foreach="docs" t-as="doc">
-                <t t-call="web.external_layout">
-                    <div class="page">
-                        <h2>SEO Audit Report</h2>
-                        <h4><a t-att-href="doc.name"><t t-out="doc.name"/></a></h4>
-                        <p>
-                            Crawled on <span t-field="doc.last_crawl"/> —
-                            <t t-out="doc.page_count"/> pages audited,
-                            <t t-out="doc.discovered_count"/> URLs discovered.
-                        </p>
-
-                        <table class="table table-sm table-bordered mt-3">
-                            <tr>
-                                <th>Overall score</th>
-                                <th>Critical</th>
-                                <th>Warnings</th>
-                                <th>Info</th>
-                                <th>Pages in error</th>
-                                <th>Site-level issues</th>
-                                <th>Avg response</th>
-                                <th>Avg words/page</th>
-                            </tr>
-                            <tr>
-                                <td><strong t-out="doc.score"/> / 100</td>
-                                <td t-out="doc.critical_count"/>
-                                <td t-out="doc.warning_count"/>
-                                <td t-out="doc.info_count"/>
-                                <td t-out="doc.error_page_count"/>
-                                <td t-out="doc.site_issue_count"/>
-                                <td><t t-out="'%.2f' % doc.avg_response_time"/>s</td>
-                                <td t-out="doc.avg_word_count"/>
-                            </tr>
-                        </table>
-                        <table class="table table-sm table-bordered">
-                            <tr>
-                                <th>Indexable pages</th>
-                                <th>HTTPS</th>
-                                <th>Mobile-friendly</th>
-                                <th>Structured data</th>
-                            </tr>
-                            <tr>
-                                <td><t t-out="doc.indexable_pct"/>%</td>
-                                <td><t t-out="doc.https_pct"/>%</td>
-                                <td><t t-out="doc.mobile_pct"/>%</td>
-                                <td><t t-out="doc.schema_pct"/>%</td>
-                            </tr>
-                        </table>
-                        <t t-set="last" t-value="doc.history_ids[:1]"/>
-                        <p t-if="len(doc.history_ids) &gt; 1 and last">
-                            Trend vs previous crawl:
-                            <strong t-out="'%+d' % last.score_delta"/> score,
-                            <t t-out="last.resolved_issue_count"/> issue(s) resolved,
-                            <t t-out="last.new_issue_count"/> new issue(s)
-                            (<t t-out="len(doc.history_ids)"/> crawls tracked).
-                        </p>
-
-                        <h3 class="mt-4">Action plan</h3>
-                        <p>Detected issues grouped by work stream, most severe first.</p>
-                        <table class="table table-sm table-bordered">
-                            <thead>
-                                <tr>
-                                    <th>Work stream</th>
-                                    <th class="text-end">Issues</th>
-                                    <th class="text-end">Critical</th>
-                                    <th class="text-end">Warnings</th>
-                                    <th class="text-end">Pages affected</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr t-foreach="doc._report_issue_groups()" t-as="group">
-                                    <td t-out="group['category']"/>
-                                    <td class="text-end" t-out="group['count']"/>
-                                    <td class="text-end" t-out="group['critical']"/>
-                                    <td class="text-end" t-out="group['warning']"/>
-                                    <td class="text-end" t-out="group['page_count']"/>
-                                </tr>
-                            </tbody>
-                        </table>
-
-                        <t t-if="doc.keyword_ids">
-                            <h3 class="mt-4">Tracked keywords</h3>
-                            <table class="table table-sm table-bordered">
-                                <thead>
-                                    <tr>
-                                        <th>Keyword</th>
-                                        <th class="text-end">Position</th>
-                                        <th class="text-end">Δ places</th>
-                                        <th class="text-end">Clicks (28d)</th>
-                                        <th class="text-end">Impressions</th>
-                                        <th class="text-end">Volume/month</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <tr t-foreach="doc.keyword_ids" t-as="kw">
-                                        <td t-out="kw.name"/>
-                                        <td class="text-end"
-                                            t-out="'100+' if kw.position &gt;= 101 else ('%.1f' % kw.position if kw.position else '-')"/>
-                                        <td class="text-end"
-                                            t-out="('%+.1f' % kw.position_delta) if kw.position_delta else '-'"/>
-                                        <td class="text-end" t-out="kw.clicks"/>
-                                        <td class="text-end" t-out="kw.impressions"/>
-                                        <td class="text-end"
-                                            t-out="kw.volume or '-'"/>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </t>
-
-                        <t t-if="doc.ai_visibility_date or doc.ai_prompt_ids.mapped('result_ids')">
-                            <h3 class="mt-4">AI Visibility (GEO)</h3>
-                            <table class="table table-sm table-bordered">
-                                <tr>
-                                    <th>Brand mentioned (prompt tests)</th>
-                                    <th>Site cited (prompt tests)</th>
-                                    <th>ChatGPT mention prompts</th>
-                                    <th>AI Overview mention prompts</th>
-                                </tr>
-                                <tr>
-                                    <td><t t-out="doc.ai_visibility_pct"/>%</td>
-                                    <td><t t-out="doc.ai_cited_pct"/>%</td>
-                                    <td t-out="doc.ai_mentions_chatgpt"/>
-                                    <td t-out="doc.ai_mentions_google"/>
-                                </tr>
-                            </table>
-                            <p t-if="doc.ai_share_of_voice"
-                               style="white-space: pre-line; font-family: monospace;"
-                               t-field="doc.ai_share_of_voice"/>
-                        </t>
-
-                        <h3 class="mt-4">Site-level issues</h3>
-                        <p style="white-space: pre-line;" t-field="doc.site_issues"/>
-
-                        <h3 class="mt-4">Page detail</h3>
-                        <table class="table table-sm table-bordered">
-                            <thead>
-                                <tr>
-                                    <th>URL</th>
-                                    <th class="text-end">HTTP</th>
-                                    <th class="text-end">Score</th>
-                                    <th class="text-end">Link score</th>
-                                    <th>Issues</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr t-foreach="doc.audit_ids.sorted(key=lambda a: a.score)" t-as="audit">
-                                    <td style="word-break: break-all;" t-out="audit.name"/>
-                                    <td class="text-end" t-out="audit.status_code"/>
-                                    <td class="text-end" t-out="audit.score"/>
-                                    <td class="text-end" t-out="audit.link_score"/>
-                                    <td style="white-space: pre-line;" t-out="audit.issues"/>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </t>
+                <t t-call="seo_suite.report_seo_site_document"/>
             </t>
         </t>
     </template>
 
+    <!-- ============================ Document ============================ -->
+    <template id="report_seo_site_document">
+        <!-- Brand color follows the issuing company's document-layout color
+             (Settings > Configure document layout > Colors), so every agency
+             using this open-source module gets its own branding. -->
+        <t t-set="brand" t-value="res_company.primary_color or '#31408F'"/>
+        <t t-set="score_cls" t-value="'good' if doc.score &gt;= 80 else ('mid' if doc.score &gt;= 60 else 'bad')"/>
+        <t t-set="score_label" t-value="'Good' if doc.score &gt;= 80 else ('Needs improvement' if doc.score &gt;= 60 else 'Poor')"/>
+
+        <div class="article" t-att-data-oe-model="doc and doc._name" t-att-data-oe-id="doc and doc.id">
+            <style>
+                .seo { color:#1F2933; font-size:9.5pt; line-height:1.4; }
+                /* NO border-collapse:collapse anywhere - wkhtmltopdf paints
+                   collapsed 0-width edges as hairlines on some hosts
+                   (DPI-rounding dependent). `separate` + spacing 0 renders
+                   the designed per-cell borders identically. */
+                .seo table { border-collapse:separate !important; border-spacing:0 !important; border:0 !important; border-color:transparent; }
+                .seo td, .seo th { border:0 !important; border-color:transparent; }
+                .seo .est-name { font-size:12pt; font-weight:bold; }
+                .seo .est-sub { font-size:8.5pt; color:#6B7280; }
+                .seo .title { font-size:20pt; font-weight:bold; color:<t t-out="brand"/>; text-align:right; letter-spacing:.5px; }
+                .seo .title-meta { font-size:9pt; color:#6B7280; text-align:right; margin-top:2px; }
+                .seo .title-meta b { color:#1F2933; }
+                .seo .type-badge { display:inline-block; padding:3px 12px; border-radius:12px; font-size:9pt; font-weight:bold; letter-spacing:.5px; text-transform:uppercase; }
+                .seo .type-good { background:#E1F5EE; color:#0F6E56; }
+                .seo .type-mid { background:#FAEEDA; color:#854F0B; }
+                .seo .type-bad { background:#FCEBEB; color:#A32D2D; }
+                .seo .rule { border-bottom:2px solid <t t-out="brand"/>; margin:10px 0 14px; }
+                .seo .section { font-size:11pt; font-weight:bold; color:<t t-out="brand"/>; margin:18px 0 7px; border-bottom:1px solid #D7DEDC; padding-bottom:3px; page-break-after:avoid; }
+                .seo .score-box { width:96px; height:96px; border-radius:10px; color:#FFF; text-align:center; }
+                .seo .score-good { background:#0F6E56; }
+                .seo .score-mid { background:#B45309; }
+                .seo .score-bad { background:#A32D2D; }
+                .seo .score-num { font-size:30pt; font-weight:bold; padding-top:16px; line-height:1; }
+                .seo .score-of { font-size:8pt; padding-top:3px; opacity:.85; }
+                .seo .score-word-good { color:#0F6E56; font-size:13pt; font-weight:bold; }
+                .seo .score-word-mid { color:#B45309; font-size:13pt; font-weight:bold; }
+                .seo .score-word-bad { color:#A32D2D; font-size:13pt; font-weight:bold; }
+                .seo .trend-up { color:#0F6E56; font-weight:bold; }
+                .seo .trend-down { color:#A32D2D; font-weight:bold; }
+                .seo .muted { color:#6B7280; }
+                .seo table.hbars { width:100%; margin-top:8px; font-size:8.5pt; }
+                .seo table.hbars td { padding:2px 0; vertical-align:middle; }
+                .seo td.hlabel { width:96px; color:#6B7280; padding-right:8px; }
+                .seo td.hpct { width:34px; text-align:right; font-weight:bold; padding-left:7px; }
+                .seo .hbar { background:#E5E7EB; border-radius:4px; height:7px; }
+                .seo .hfill { border-radius:4px; height:7px; }
+                .seo .bg-good { background:#0F6E56; }
+                .seo .bg-mid { background:#B45309; }
+                .seo .bg-bad { background:#A32D2D; }
+                .seo table.kpis { width:100%; border-spacing:8px 0 !important; margin:12px 0 2px; }
+                .seo td.kpi { width:25%; border:1px solid #E3E6E5 !important; border-radius:5px; background:#FBFCFB; padding:8px 12px; }
+                .seo .kpi-v { font-size:15pt; font-weight:bold; }
+                .seo .kpi-v .crit-note { font-size:8pt; color:#A32D2D; }
+                .seo .kpi-l { font-size:7.5pt; text-transform:uppercase; letter-spacing:.4px; color:#6B7280; margin-top:1px; }
+                .seo .kpi-bad { color:#A32D2D; }
+                .seo table.lines { width:100%; border:1px solid #C3CDCA !important; }
+                .seo table.lines thead th { background:<t t-out="brand"/>; color:#FFF; font-size:8pt; font-weight:bold; text-align:left; padding:6px 8px; text-transform:uppercase; letter-spacing:.3px; border-right:1px solid rgba(255,255,255,.22) !important; }
+                .seo table.lines thead th.num { text-align:right; }
+                .seo table.lines tbody td { border-bottom:1px solid #E5E7EB !important; border-right:1px solid #ECEEED !important; padding:5px 8px; vertical-align:top; font-size:9pt; }
+                .seo table.lines thead th:last-child, .seo table.lines tbody td:last-child { border-right:0 !important; }
+                .seo table.lines tbody tr:last-child td { border-bottom:0 !important; }
+                .seo table.lines tbody tr:nth-child(even) td { background:#FAFAF7; }
+                .seo table.lines td.num { text-align:right; }
+                .seo table.lines td.center { text-align:center; }
+                .seo table.lines td.path { font-family:monospace; font-size:8pt; word-break:break-all; }
+                .seo table.lines td.zero { color:#9C9A92; }
+                .seo .pill { display:inline-block; padding:1px 8px; border-radius:10px; font-size:7.5pt; font-weight:bold; letter-spacing:.3px; text-transform:uppercase; }
+                .seo .pill-crit { background:#FCEBEB; color:#A32D2D; }
+                .seo .pill-warn { background:#FAEEDA; color:#854F0B; }
+                .seo .pill-info { background:#E3EEFA; color:#1D5CA3; }
+                .seo .score-pill { display:inline-block; min-width:24px; padding:1px 6px; border-radius:9px; font-weight:bold; color:#FFF; text-align:center; font-size:8.5pt; }
+                .seo .dot { display:inline-block; width:6px; height:6px; border-radius:3px; margin-right:5px; }
+                .seo .dot-crit { background:#A32D2D; }
+                .seo .dot-warn { background:#D97706; }
+                .seo .dot-info { background:#2D74C4; }
+                .seo .issue-more { color:#9C9A92; font-size:8pt; padding-top:1px; }
+                .seo .site-line-label { font-weight:bold; }
+                .seo .site-line-urls { color:#6B7280; font-family:monospace; font-size:7.5pt; word-break:break-all; padding-top:1px; }
+                .seo .kw { font-weight:bold; }
+                .seo .kw-top { display:inline-block; padding:1px 8px; border-radius:10px; font-weight:bold; color:#0F6E56; background:#E1F5EE; }
+                .seo .delta-up { color:#0F6E56; }
+                .seo .delta-down { color:#A32D2D; }
+                .seo .mono-box { border:1px solid #E3E6E5 !important; border-radius:5px; background:#FBFCFB; padding:8px 12px; margin-top:6px; font-size:8pt; font-family:monospace; white-space:pre-line; }
+                .seo .okbox { background:#E1F5EE; border-radius:5px; padding:8px 12px; margin-top:10px; page-break-inside:avoid; }
+                .seo .okbox-head { color:#0F6E56; font-weight:bold; font-size:9.5pt; }
+                .seo .okbox-paths { color:#6B7280; font-size:7.5pt; font-family:monospace; padding-top:3px; }
+                .seo .capnote { color:#6B7280; font-size:8pt; padding:4px 0 0; }
+                .seo .closing { margin-top:14px; border-top:1px solid #E5E7EB; padding-top:6px; font-size:7.5pt; color:#9C9A92; font-style:italic; }
+            </style>
+
+            <div class="seo">
+                <!-- Header -->
+                <table style="width:100%;">
+                    <tr>
+                        <td style="width:55%; vertical-align:top;">
+                            <img t-if="res_company.logo"
+                                 t-att-src="image_data_uri(res_company.logo)"
+                                 style="max-height:45px; max-width:220px; margin-bottom:6px;"/>
+                            <div class="est-name" t-field="res_company.name"/>
+                            <div class="est-sub">
+                                <span t-field="res_company.partner_id"
+                                      t-options='{"widget": "contact", "fields": ["address"], "no_marker": true}'/>
+                                <span t-if="res_company.vat"> · VAT <span t-field="res_company.vat"/></span>
+                            </div>
+                        </td>
+                        <td style="width:45%; vertical-align:top;">
+                            <div class="title">SEO AUDIT</div>
+                            <div style="text-align:right; margin-top:5px;">
+                                <span t-attf-class="type-badge type-{{score_cls}}"><t t-out="score_label"/></span>
+                            </div>
+                            <div class="title-meta">
+                                <b><a t-att-href="doc.name" t-attf-style="color:{{brand}}; text-decoration:none;"><t t-out="doc.name"/></a></b>
+                                · <b><span t-field="doc.last_crawl" t-options='{"widget": "date"}'/></b>
+                            </div>
+                            <div class="title-meta">
+                                <t t-out="doc.page_count"/> pages audited ·
+                                <t t-out="doc.discovered_count"/> URLs discovered<t t-if="doc.google_last_sync">
+                                · Google data synced</t>
+                            </div>
+                        </td>
+                    </tr>
+                </table>
+                <div class="rule"/>
+
+                <!-- Score panel -->
+                <table style="width:100%; page-break-inside:avoid;">
+                    <tr>
+                        <td style="width:108px; vertical-align:top;">
+                            <div t-attf-class="score-box score-{{score_cls}}">
+                                <div class="score-num"><t t-out="doc.score"/></div>
+                                <div class="score-of">/ 100</div>
+                            </div>
+                        </td>
+                        <td style="vertical-align:top; padding-left:16px;">
+                            <div t-attf-class="score-word-{{score_cls}}"><t t-out="score_label"/></div>
+                            <div class="muted" style="font-size:8.5pt;">Overall on-page SEO health of the audited pages.</div>
+                            <t t-set="last" t-value="doc.history_ids[:1]"/>
+                            <div t-if="len(doc.history_ids) &gt; 1 and last" style="font-size:9pt; padding-top:5px;">
+                                <span t-attf-class="trend-{{'up' if last.score_delta &gt;= 0 else 'down'}}">
+                                    <t t-out="('▲' if last.score_delta &gt;= 0 else '▼') + ' %+d' % last.score_delta"/>
+                                </span>
+                                <span class="muted">
+                                    vs previous crawl —
+                                    <t t-out="last.resolved_issue_count"/> issue(s) resolved,
+                                    <t t-out="last.new_issue_count"/> new
+                                    (<t t-out="len(doc.history_ids)"/> crawls tracked)
+                                </span>
+                            </div>
+                            <table class="hbars">
+                                <t t-foreach="[('Indexable', doc.indexable_pct), ('HTTPS', doc.https_pct), ('Mobile-friendly', doc.mobile_pct), ('Structured data', doc.schema_pct)]" t-as="bar">
+                                    <tr>
+                                        <td class="hlabel"><t t-out="bar[0]"/></td>
+                                        <td>
+                                            <div class="hbar">
+                                                <div t-attf-class="hfill bg-{{'good' if bar[1] &gt;= 90 else ('mid' if bar[1] &gt;= 60 else 'bad')}}"
+                                                     t-attf-style="width:{{max(2, min(100, bar[1]))}}%;"></div>
+                                            </div>
+                                        </td>
+                                        <td class="hpct"><t t-out="bar[1]"/>%</td>
+                                    </tr>
+                                </t>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+
+                <!-- KPI cards -->
+                <table class="kpis" style="page-break-inside:avoid;">
+                    <tr>
+                        <td class="kpi">
+                            <div class="kpi-v"><t t-out="doc.page_count"/></div>
+                            <div class="kpi-l">Pages audited</div>
+                        </td>
+                        <td class="kpi">
+                            <div class="kpi-v">
+                                <t t-out="doc.issue_count"/>
+                                <span t-if="doc.critical_count" class="crit-note"> · <t t-out="doc.critical_count"/> critical</span>
+                            </div>
+                            <div class="kpi-l">Issues found</div>
+                        </td>
+                        <td class="kpi">
+                            <div t-attf-class="kpi-v {{'kpi-bad' if doc.error_page_count else ''}}"><t t-out="doc.error_page_count"/></div>
+                            <div class="kpi-l">Pages in error</div>
+                        </td>
+                        <td class="kpi">
+                            <t t-if="doc.checked_link_count">
+                                <div t-attf-class="kpi-v {{'kpi-bad' if doc.broken_link_count else ''}}"><t t-out="doc.broken_link_count"/></div>
+                                <div class="kpi-l">Broken links</div>
+                            </t>
+                            <t t-else="">
+                                <div class="kpi-v"><t t-out="'%.2fs' % doc.avg_response_time"/></div>
+                                <div class="kpi-l">Avg response</div>
+                            </t>
+                        </td>
+                    </tr>
+                </table>
+
+                <!-- Top issues -->
+                <t t-set="top_issues" t-value="doc._report_top_issues()"/>
+                <t t-if="top_issues">
+                    <div class="section">Top issues to fix</div>
+                    <table class="lines">
+                        <thead>
+                            <tr>
+                                <th style="width:13%;">Severity</th>
+                                <th>Issue</th>
+                                <th class="num" style="width:14%;">Pages affected</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <t t-foreach="top_issues" t-as="ti">
+                                <t t-set="sev_cls" t-value="{'critical': 'crit', 'warning': 'warn', 'info': 'info'}[ti['severity']]"/>
+                                <tr style="page-break-inside:avoid;">
+                                    <td><span t-attf-class="pill pill-{{sev_cls}}"><t t-out="ti['severity']"/></span></td>
+                                    <td><t t-out="ti['message']"/></td>
+                                    <td class="num" style="font-weight:bold;"><t t-out="ti['page_count']"/></td>
+                                </tr>
+                            </t>
+                        </tbody>
+                    </table>
+                </t>
+
+                <!-- Action plan by work stream -->
+                <div class="section">Action plan by work stream</div>
+                <table class="lines">
+                    <thead>
+                        <tr>
+                            <th>Work stream</th>
+                            <th class="num" style="width:12%;">Issues</th>
+                            <th class="num" style="width:12%;">Critical</th>
+                            <th class="num" style="width:13%;">Warnings</th>
+                            <th class="num" style="width:16%;">Pages affected</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <t t-foreach="doc._report_issue_groups()" t-as="group">
+                            <tr style="page-break-inside:avoid;">
+                                <td style="font-weight:bold;"><t t-out="group['category']"/></td>
+                                <td class="num"><t t-out="group['count']"/></td>
+                                <td t-attf-class="num {{'zero' if not group['critical'] else ''}}"
+                                    t-attf-style="{{'color:#A32D2D; font-weight:bold;' if group['critical'] else ''}}"><t t-out="group['critical']"/></td>
+                                <td t-attf-class="num {{'zero' if not group['warning'] else ''}}"
+                                    t-attf-style="{{'color:#854F0B;' if group['warning'] else ''}}"><t t-out="group['warning']"/></td>
+                                <td class="num"><t t-out="group['page_count']"/></td>
+                            </tr>
+                        </t>
+                    </tbody>
+                </table>
+
+                <!-- Site-level issues -->
+                <t t-set="site_lines" t-value="[l.strip() for l in (doc.site_issues or '').splitlines() if l.strip()]"/>
+                <t t-if="site_lines">
+                    <div class="section">Site-level issues (<t t-out="len(site_lines)"/>)</div>
+                    <table class="lines">
+                        <tbody>
+                            <t t-foreach="site_lines" t-as="sline">
+                                <t t-set="split_at" t-value="sline.find('http')"/>
+                                <tr style="page-break-inside:avoid;">
+                                    <td>
+                                        <div class="site-line-label"><t t-out="sline[:split_at].rstrip(' :,') if split_at &gt; 0 else sline"/></div>
+                                        <div t-if="split_at &gt; 0" class="site-line-urls"><t t-out="sline[split_at:]"/></div>
+                                    </td>
+                                </tr>
+                            </t>
+                        </tbody>
+                    </table>
+                </t>
+
+                <!-- Keywords -->
+                <t t-if="doc.keyword_ids">
+                    <div class="section">Tracked keywords</div>
+                    <table class="lines">
+                        <thead>
+                            <tr>
+                                <th>Keyword</th>
+                                <th class="num" style="width:11%;">Position</th>
+                                <th class="num" style="width:11%;">Δ places</th>
+                                <th class="num" style="width:12%;">Clicks (28d)</th>
+                                <th class="num" style="width:13%;">Impressions</th>
+                                <th class="num" style="width:14%;">Volume/month</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <t t-foreach="doc.keyword_ids" t-as="kw">
+                                <tr style="page-break-inside:avoid;">
+                                    <td class="kw"><t t-out="kw.name"/></td>
+                                    <td class="num">
+                                        <t t-if="kw.position and kw.position &lt; 101">
+                                            <span t-attf-class="{{'kw-top' if kw.position &lt;= 10 else ''}}" style="font-weight:bold;"><t t-out="'%.1f' % kw.position"/></span>
+                                        </t>
+                                        <t t-elif="kw.position &gt;= 101">100+</t>
+                                        <t t-else="">-</t>
+                                    </td>
+                                    <td t-attf-class="num {{'delta-up' if kw.position_delta &gt; 0 else ('delta-down' if kw.position_delta &lt; 0 else 'zero')}}"
+                                        t-out="('%+.1f' % kw.position_delta) if kw.position_delta else '-'"/>
+                                    <td class="num" t-out="kw.clicks"/>
+                                    <td class="num" t-out="kw.impressions"/>
+                                    <td class="num" t-out="kw.volume or '-'"/>
+                                </tr>
+                            </t>
+                        </tbody>
+                    </table>
+                </t>
+
+                <!-- AI Visibility -->
+                <t t-if="doc.ai_visibility_date or doc.ai_prompt_ids.mapped('result_ids')">
+                    <div class="section">AI Visibility (GEO)</div>
+                    <table class="kpis" style="page-break-inside:avoid; margin-top:2px;">
+                        <tr>
+                            <td class="kpi">
+                                <div class="kpi-v"><t t-out="doc.ai_visibility_pct"/>%</div>
+                                <div class="kpi-l">Brand mentioned</div>
+                            </td>
+                            <td class="kpi">
+                                <div class="kpi-v"><t t-out="doc.ai_cited_pct"/>%</div>
+                                <div class="kpi-l">Site cited</div>
+                            </td>
+                            <td class="kpi">
+                                <div class="kpi-v"><t t-out="doc.ai_mentions_chatgpt"/></div>
+                                <div class="kpi-l">ChatGPT prompts</div>
+                            </td>
+                            <td class="kpi">
+                                <div class="kpi-v"><t t-out="doc.ai_mentions_google"/></div>
+                                <div class="kpi-l">AI Overview prompts</div>
+                            </td>
+                        </tr>
+                    </table>
+                    <div t-if="doc.ai_share_of_voice" class="mono-box"><t t-out="doc.ai_share_of_voice"/></div>
+                </t>
+
+                <!-- Page detail (worst 50) -->
+                <t t-set="page_rows" t-value="doc._report_page_rows()"/>
+                <t t-set="shown_rows" t-value="page_rows[:50]"/>
+                <t t-if="page_rows">
+                    <div class="section">Pages needing work (<t t-out="len(page_rows)"/>)</div>
+                    <table class="lines">
+                        <thead>
+                            <tr>
+                                <th style="width:31%;">Page</th>
+                                <th class="num" style="width:8%;">HTTP</th>
+                                <th style="width:9%; text-align:center;">Score</th>
+                                <th>Top issues</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <t t-foreach="shown_rows" t-as="row">
+                                <tr style="page-break-inside:avoid;">
+                                    <td class="path"><t t-out="row['path']"/></td>
+                                    <td t-attf-class="num {{'kpi-bad' if row['status'] &gt;= 400 or not row['status'] else ''}}"
+                                        t-attf-style="{{'font-weight:bold;' if row['status'] &gt;= 400 or not row['status'] else ''}}"><t t-out="row['status'] or '-'"/></td>
+                                    <td class="center">
+                                        <span t-attf-class="score-pill score-{{'good' if row['score'] &gt;= 80 else ('mid' if row['score'] &gt;= 60 else 'bad')}}"><t t-out="row['score']"/></span>
+                                    </td>
+                                    <td>
+                                        <div t-if="row['error']" style="color:#A32D2D; font-weight:bold; padding:1px 0;"><t t-out="row['error']"/></div>
+                                        <t t-foreach="row['issues']" t-as="iss">
+                                            <t t-set="dot_cls" t-value="{'critical': 'crit', 'warning': 'warn', 'info': 'info'}[iss['severity']]"/>
+                                            <div style="padding:1px 0;">
+                                                <span t-attf-class="dot dot-{{dot_cls}}"></span><t t-out="iss['message']"/>
+                                            </div>
+                                        </t>
+                                        <div t-if="row['more']" class="issue-more">+ <t t-out="row['more']"/> more — full detail in the app</div>
+                                    </td>
+                                </tr>
+                            </t>
+                        </tbody>
+                    </table>
+                    <div t-if="len(page_rows) &gt; 50" class="capnote">
+                        + <t t-out="len(page_rows) - 50"/> other page(s) with minor issues — full list in the SEO Suite app.
+                    </div>
+                </t>
+
+                <!-- Clean pages -->
+                <t t-set="clean_pages" t-value="doc._report_clean_pages()"/>
+                <div t-if="clean_pages" class="okbox">
+                    <span class="okbox-head">✓ <t t-out="len(clean_pages)"/> page(s) with no detected issues</span>
+                    <div class="okbox-paths"><t t-out="' · '.join(clean_pages)"/></div>
+                </div>
+
+                <div class="closing">
+                    Full issue detail, how-to-fix guidance and crawl history are available in the SEO Suite app.
+                    Generated with SEO Suite for Odoo.
+                </div>
+            </div>
+        </div>
+
+        <!-- Page footer: numbering (spans filled by Odoo's PDF engine). -->
+        <div class="footer" style="text-align:center; font-size:8pt; color:#9C9A92; padding-top:4px;">
+            Page <span class="page"/> / <span class="topage"/>
+        </div>
+    </template>
 </odoo>
