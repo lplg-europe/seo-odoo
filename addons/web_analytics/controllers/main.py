@@ -117,8 +117,12 @@ class WebAnalyticsController(http.Controller):
 
         secret = request.env["ir.config_parameter"].sudo().get_param(
             "database.secret") or "wa"
+        # Daily rotation = max privacy; a stable salt (still cookieless,
+        # IP never stored) enables weekly retention when the site opts in.
         salt = daily_salt(
-            secret, fields.Date.to_string(fields.Date.today()))
+            secret,
+            fields.Date.to_string(fields.Date.today())
+            if site.daily_salt_rotation else "static")
         ip = request.httprequest.remote_addr or ""
 
         requested_type = payload.get("type")

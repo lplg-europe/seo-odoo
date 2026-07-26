@@ -3,3 +3,5 @@ access_wa_site_user,web.analytics.site.user,model_web_analytics_site,base.group_
 access_wa_event_user,web.analytics.event.user,model_web_analytics_event,base.group_user,1,0,0,1
 access_wa_goal_user,web.analytics.goal.user,model_web_analytics_goal,base.group_user,1,1,1,1
 access_wa_monitor_user,web.analytics.monitor.user,model_web_analytics_monitor,base.group_user,1,1,1,1
+access_wa_funnel_user,web.analytics.funnel.user,model_web_analytics_funnel,base.group_user,1,1,1,1
+access_wa_funnel_step_user,web.analytics.funnel.step.user,model_web_analytics_funnel_step,base.group_user,1,1,1,1

@@ -8,7 +8,8 @@ Two independent modules:
 | Module | What it is |
 |---|---|
 | [`seo_suite`](addons/seo_suite) | Full SEO toolkit: crawl & audit, Search Console, GA4, keywords, backlinks, AI visibility, AI recommendations, client-ready PDF reports |
-| [`web_analytics`](addons/web_analytics) | Privacy-first, cookieless web analytics (Plausible-style): 1.5 KB snippet, no consent banner needed for basic analytics, acquisition channels incl. AI referrals, native Odoo dashboards |
+| [`web_analytics`](addons/web_analytics) | Privacy-first, cookieless web analytics (Plausible-style): snippet, channels incl. AI referrals, goals, funnels, retention, Web Vitals, uptime alerts, native Odoo dashboards |
+| [`seo_suite_website`](addons/seo_suite_website) | Auto-installed bridge to Odoo Website: apply AI metas to pages in one click, turn crawled 404s into 301 redirects — the fix-it-in-the-CMS loop no external SEO tool can offer |
 
 ## Features
 
@@ -59,9 +60,10 @@ with exactly the same rules as the Odoo module:
 ```
 
 ### Roadmap
+- Automated monthly client reports by email (SEO + analytics combined)
 - Backlinks detail tables (per-link list, new/lost trends)
 - Server log analyzer (bots, LLM crawlers)
-- Odoo Website helpers: sitemap, robots, schema, redirects
+- Website bridge: JSON-LD injection (metas & redirects are done)
 
 ## Installation (dev)
 

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     "name": "Web Analytics",
-    "version": "19.0.2.0.0",
+    "version": "19.0.2.1.0",
     "summary": "Privacy-first, cookieless web analytics inside Odoo "
                "(Plausible-style).",
     "description": """
@@ -23,6 +23,10 @@ no consent banner needed for basic analytics, no Google.
 - Outbound-click tracking and JS error tracking
 - Conversion goals (page visited, custom event, outbound click) with
   session-based conversion rates
+- Multi-step funnels: ordered steps with per-step sessions, conversion
+  and drop-off percentages
+- Weekly retention cohorts (opt-in stable visitor hash — daily rotation
+  stays the default for maximum privacy)
 - Uptime monitoring: periodic HTTP checks with email alerts on
   down / recovery
 - Native Odoo graph & pivot dashboards

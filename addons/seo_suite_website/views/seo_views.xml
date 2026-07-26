@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="view_seo_audit_form_website" model="ir.ui.view">
+        <field name="name">seo.audit.form.website.bridge</field>
+        <field name="model">seo.audit</field>
+        <field name="inherit_id" ref="seo_suite.view_seo_audit_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//header" position="inside">
+                <button name="action_apply_meta_to_website" type="object"
+                        string="Apply to Website" icon="fa-wordpress"
+                        class="btn-secondary"
+                        invisible="not website_page_id or (not ai_title and not ai_meta_description)"
+                        help="Write the AI-suggested title and meta description onto the matching Odoo Website page."/>
+                <button name="action_create_redirect" type="object"
+                        string="Create 301 redirect" icon="fa-share"
+                        invisible="status_code &lt; 400"
+                        help="This URL is broken — create a website redirect to the right page."/>
+            </xpath>
+            <xpath expr="//field[@name='site_id']" position="after">
+                <field name="website_page_id"/>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="view_seo_site_form_website" model="ir.ui.view">
+        <field name="name">seo.site.form.website.bridge</field>
+        <field name="model">seo.site</field>
+        <field name="inherit_id" ref="seo_suite.view_seo_site_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//header" position="inside">
+                <button name="action_apply_all_ai_metas" type="object"
+                        string="Apply AI metas to Website" icon="fa-wordpress"
+                        invisible="page_count == 0"
+                        help="Write every available AI title/meta suggestion onto the matching Odoo Website pages, in one go."/>
+            </xpath>
+        </field>
+    </record>
+
+</odoo>

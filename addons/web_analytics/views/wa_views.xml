@@ -39,6 +39,7 @@
                             <field name="token" readonly="1"/>
                             <field name="allowed_hosts"
                                    placeholder="www.my-website.be"/>
+                            <field name="daily_salt_rotation"/>
                             <field name="active"/>
                         </group>
                         <group string="Traffic">
@@ -70,6 +71,14 @@
                                         title="View conversions"/>
                             </list>
                         </field>
+                    </group>
+                    <group string="Retention (weekly cohorts)">
+                        <button name="action_compute_retention" type="object"
+                                string="Compute retention" icon="fa-users"
+                                class="btn-secondary" colspan="2"/>
+                        <field name="retention_table" nolabel="1" readonly="1"
+                               class="font-monospace" colspan="2"
+                               invisible="not retention_table"/>
                     </group>
                 </sheet>
             </form>
@@ -274,6 +283,67 @@
         <field name="view_mode">list</field>
     </record>
 
+    <record id="view_wa_funnel_form" model="ir.ui.view">
+        <field name="name">web.analytics.funnel.form</field>
+        <field name="model">web.analytics.funnel</field>
+        <field name="arch" type="xml">
+            <form string="Funnel">
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="name" placeholder="e.g. Visit → Pricing → Contact"/></h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="site_id"/>
+                            <field name="period_days"/>
+                        </group>
+                        <group>
+                            <field name="entered_sessions"/>
+                            <field name="completion_rate"/>
+                        </group>
+                    </group>
+                    <field name="step_ids">
+                        <list editable="bottom">
+                            <field name="sequence" widget="handle"/>
+                            <field name="name"/>
+                            <field name="step_type"/>
+                            <field name="pattern"/>
+                            <field name="sessions_count"/>
+                            <field name="conversion_pct"/>
+                            <field name="drop_pct"/>
+                        </list>
+                    </field>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_wa_funnel_list" model="ir.ui.view">
+        <field name="name">web.analytics.funnel.list</field>
+        <field name="model">web.analytics.funnel</field>
+        <field name="arch" type="xml">
+            <list string="Funnels">
+                <field name="name"/>
+                <field name="site_id"/>
+                <field name="entered_sessions"/>
+                <field name="completion_rate"/>
+                <field name="period_days" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="action_wa_funnel" model="ir.actions.act_window">
+        <field name="name">Funnels</field>
+        <field name="res_model">web.analytics.funnel</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Build your first funnel</p>
+            <p>Define the ordered steps a visitor should take (pages,
+               events, outbound clicks) and see how many sessions reach
+               each one — and where they drop off.</p>
+        </field>
+    </record>
+
     <record id="view_wa_goal_list" model="ir.ui.view">
         <field name="name">web.analytics.goal.list</field>
         <field name="model">web.analytics.goal</field>
@@ -300,6 +370,8 @@
               action="action_wa_events" sequence="15"/>
     <menuitem id="menu_wa_goal" name="Goals" parent="menu_wa_root"
               action="action_wa_goal" sequence="20"/>
+    <menuitem id="menu_wa_funnel" name="Funnels" parent="menu_wa_root"
+              action="action_wa_funnel" sequence="22"/>
     <menuitem id="menu_wa_monitor" name="Uptime" parent="menu_wa_root"
               action="action_wa_monitor" sequence="25"/>
 

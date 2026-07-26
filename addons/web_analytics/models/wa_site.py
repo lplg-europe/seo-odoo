@@ -20,6 +20,12 @@ class WebAnalyticsSite(models.Model):
         string="Allowed hostnames",
         help="Optional comma-separated hostnames; events sent for other "
              "hostnames are dropped (anti-spam).")
+    daily_salt_rotation = fields.Boolean(
+        string="Daily visitor-id rotation", default=True,
+        help="ON (default): the anonymous visitor hash rotates every day — "
+             "maximum privacy, but weekly retention cannot be measured.\n"
+             "OFF: the hash stays stable across days (still cookieless, "
+             "still no IP stored) — enables the retention cohorts.")
     event_ids = fields.One2many(
         "web.analytics.event", "site_id", string="Events")
     snippet = fields.Text(
@@ -49,6 +55,12 @@ class WebAnalyticsSite(models.Model):
              "good is under 2500 ms.")
     goal_ids = fields.One2many(
         "web.analytics.goal", "site_id", string="Goals")
+    funnel_ids = fields.One2many(
+        "web.analytics.funnel", "site_id", string="Funnels")
+    retention_table = fields.Text(
+        string="Retention cohorts", readonly=True)
+    retention_date = fields.Datetime(
+        string="Retention computed on", readonly=True)
 
     def _compute_snippet(self):
         base_url = self.env["ir.config_parameter"].sudo().get_param(
@@ -117,6 +129,65 @@ class WebAnalyticsSite(models.Model):
               AND event_type = 'performance' AND lcp_ms > 0
         """, (self.id, since))
         self.lcp_p75_ms = int(self.env.cr.fetchone()[0] or 0)
+
+    RETENTION_WEEKS = 8
+
+    def action_compute_retention(self):
+        """Weekly retention cohorts: share of each week's new visitors
+        seen again in the following weeks."""
+        self.ensure_one()
+        weeks = self.RETENTION_WEEKS
+        self.env.cr.execute("""
+            WITH firsts AS (
+                SELECT visitor_hash,
+                       DATE_TRUNC('week', MIN(timestamp)) AS cohort
+                FROM web_analytics_event
+                WHERE site_id = %s AND timestamp >= %s
+                GROUP BY visitor_hash),
+            activity AS (
+                SELECT DISTINCT visitor_hash,
+                       DATE_TRUNC('week', timestamp) AS week
+                FROM web_analytics_event
+                WHERE site_id = %s AND timestamp >= %s)
+            SELECT f.cohort::date,
+                   FLOOR(EXTRACT(EPOCH FROM (a.week - f.cohort))
+                         / 604800)::int AS offset_weeks,
+                   COUNT(DISTINCT a.visitor_hash)
+            FROM firsts f
+            JOIN activity a USING (visitor_hash)
+            GROUP BY 1, 2 ORDER BY 1, 2
+        """, (self.id, fields.Datetime.now() - timedelta(weeks=weeks),
+              self.id, fields.Datetime.now() - timedelta(weeks=weeks)))
+        rows = self.env.cr.fetchall()
+        cohorts = {}
+        for cohort, offset, count in rows:
+            cohorts.setdefault(cohort, {})[offset] = count
+        lines = ["%-12s %8s  %s" % ("Cohort", "Visitors", " ".join(
+            "%6s" % ("W+%d" % i) for i in range(weeks)))]
+        for cohort in sorted(cohorts):
+            data = cohorts[cohort]
+            base = data.get(0, 0) or 1
+            cells = []
+            for i in range(weeks):
+                if i in data:
+                    cells.append("%5d%%" % round(100.0 * data[i] / base))
+                else:
+                    cells.append("%6s" % "·")
+            lines.append("%-12s %8d  %s" % (
+                cohort.strftime("%Y-%m-%d"), data.get(0, 0),
+                " ".join(cells)))
+        if self.daily_salt_rotation:
+            lines.append("")
+            lines.append(
+                "⚠ Daily visitor-id rotation is ON for this site: visitors "
+                "cannot be recognized across days, so cross-week retention "
+                "reads ~0%. Turn the rotation off (Setup) to measure "
+                "retention from now on.")
+        self.write({
+            "retention_table": "\n".join(lines),
+            "retention_date": fields.Datetime.now(),
+        })
+        return True
 
     def action_view_events(self):
         self.ensure_one()
