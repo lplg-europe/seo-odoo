@@ -344,7 +344,12 @@
                             </t>
                         </tbody>
                     </table>
-                    <div class="capnote">Best value of each row in green. Backlink and AI-visibility rows appear only for the sites where those scans were run.</div>
+                    <div class="capnote">
+                        Best value of each row in green. Backlink and AI-visibility rows
+                        appear only for the sites where those scans were run.<t t-if="bench['capped']">
+                        The crawl budget was reached on <t t-out="', '.join(bench['capped'])"/>,
+                        so their real page count is higher than shown.</t>
+                    </div>
                 </t>
 
                 <!-- Action plan by work stream -->
@@ -405,6 +410,79 @@
                                 </tbody>
                             </table>
                         </t>
+                    </t>
+
+                    <!-- Keyword cannibalization (complete report) -->
+                    <t t-set="cannibal" t-value="doc._report_cannibalization_rows()"/>
+                    <t t-if="cannibal">
+                        <div class="section">Keyword cannibalization — pages competing against each other</div>
+                        <div class="bucket-advice">
+                            Queries where several of your own pages rank: Google splits the
+                            clicks and often shows the weaker page. Each row states which
+                            page to keep.
+                        </div>
+                        <table class="lines">
+                            <thead>
+                                <tr>
+                                    <th style="width:11%;">Severity</th>
+                                    <th>Query &amp; competing pages</th>
+                                    <th class="num" style="width:11%;">Impressions</th>
+                                    <th class="num" style="width:9%;">Clicks</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <t t-foreach="cannibal" t-as="can">
+                                    <t t-set="can_cls" t-value="{'high': 'crit', 'medium': 'warn', 'low': 'info'}[can['severity']]"/>
+                                    <tr style="page-break-inside:avoid;">
+                                        <td><span t-attf-class="pill pill-{{can_cls}}"><t t-out="can['severity']"/></span></td>
+                                        <td>
+                                            <div style="font-weight:bold;"><t t-out="can['query']"/></div>
+                                            <t t-foreach="can['pages']" t-as="cpage">
+                                                <div class="site-line-urls"><t t-out="cpage"/></div>
+                                            </t>
+                                            <div class="fix"><t t-out="can['recommendation']"/></div>
+                                        </td>
+                                        <td class="num" style="font-weight:bold;"><t t-out="can['impressions']"/></td>
+                                        <td class="num"><t t-out="can['clicks']"/></td>
+                                    </tr>
+                                </t>
+                            </tbody>
+                        </table>
+                    </t>
+
+                    <!-- Internal linking plan (complete report) -->
+                    <t t-set="links" t-value="doc._report_link_suggestions()"/>
+                    <t t-if="links">
+                        <div class="section">Internal linking plan</div>
+                        <t t-set="orphans" t-value="doc._orphan_pages()"/>
+                        <div class="bucket-advice">
+                            Concrete links to add: each row pairs a page with internal
+                            authority to a page that lacks internal support, on a topic
+                            they already share.<t t-if="orphans">
+                            <b> <t t-out="len(orphans)"/> page(s) currently have no
+                            internal link at all</b> — they exist only in the sitemap
+                            and receive no ranking signal from the rest of the site.</t>
+                        </div>
+                        <table class="lines">
+                            <thead>
+                                <tr>
+                                    <th style="width:27%;">Add a link on</th>
+                                    <th style="width:27%;">Pointing to</th>
+                                    <th style="width:14%;">Anchor</th>
+                                    <th>Why</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <t t-foreach="links" t-as="link">
+                                    <tr style="page-break-inside:avoid;">
+                                        <td class="path"><t t-out="link['source']"/></td>
+                                        <td class="path"><t t-out="link['target']"/></td>
+                                        <td style="font-weight:bold; font-size:8pt;"><t t-out="link['anchor']"/></td>
+                                        <td class="ai-meta"><t t-out="link['reason']"/></td>
+                                    </tr>
+                                </t>
+                            </tbody>
+                        </table>
                     </t>
 
                     <!-- Ready-to-apply AI metas (complete report) -->

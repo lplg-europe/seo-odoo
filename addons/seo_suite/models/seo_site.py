@@ -4,6 +4,7 @@ audits every page, then reports cross-page issues."""
 import json
 import logging
 import re
+from collections import Counter
 from datetime import timedelta
 from urllib.parse import urlsplit
 
@@ -81,6 +82,18 @@ class SeoSite(models.Model):
              "health, backlinks and AI visibility side by side.")
     competitor_count = fields.Integer(
         compute="_compute_competitor_count", string="Competitors")
+    cannibalization_ids = fields.One2many(
+        "seo.cannibalization", "site_id", string="Cannibalized queries")
+    cannibalization_count = fields.Integer(
+        compute="_compute_insight_counts", string="Cannibalized queries")
+    cannibalization_date = fields.Datetime(
+        string="Cannibalization checked on", readonly=True)
+    link_suggestion_ids = fields.One2many(
+        "seo.link.suggestion", "site_id", string="Internal link suggestions")
+    link_suggestion_count = fields.Integer(
+        compute="_compute_insight_counts", string="Link suggestions")
+    link_suggestion_date = fields.Datetime(
+        string="Link plan computed on", readonly=True)
     keyword_count = fields.Integer(
         compute="_compute_keyword_count", string="Keywords")
     dfs_location = fields.Char(
@@ -175,6 +188,12 @@ class SeoSite(models.Model):
     def _compute_competitor_count(self):
         for rec in self:
             rec.competitor_count = len(rec.competitor_ids)
+
+    @api.depends("cannibalization_ids", "link_suggestion_ids")
+    def _compute_insight_counts(self):
+        for rec in self:
+            rec.cannibalization_count = len(rec.cannibalization_ids)
+            rec.link_suggestion_count = len(rec.link_suggestion_ids)
 
     def _bare_host(self):
         self.ensure_one()
@@ -1044,6 +1063,250 @@ class SeoSite(models.Model):
         return [self._report_path(a.name) for a in self.audit_ids.sorted("name")
                 if not a.issue_ids and not a.error and a.status_code < 400]
 
+    # ------------------------------------------------------------------
+    # Cannibalization
+    # ------------------------------------------------------------------
+
+    def _cannibalization_advice(self, winner, challengers, severity):
+        """Plain-English decision for one cannibalized query."""
+        self.ensure_one()
+        challenger_urls = ", ".join(
+            self._report_path(c["page"]) for c in challengers[:3])
+        keep = self._report_path(winner["page"])
+        if severity == "high":
+            return (
+                "Consolidate: %s is the strongest page (%d impressions). "
+                "Merge the useful content of %s into it, then 301-redirect "
+                "them — or at minimum de-optimize their titles/H1 for this "
+                "query and link them to %s with this query as anchor."
+                % (keep, winner["impressions"], challenger_urls, keep))
+        if severity == "medium":
+            return (
+                "Clarify the intent: keep %s as the page targeting this "
+                "query and rewrite the title/H1 of %s around their own "
+                "angle, then link them to %s."
+                % (keep, challenger_urls, keep))
+        return (
+            "Watch: %s clearly dominates. Just make sure %s does not start "
+            "targeting the same query in its title and H1."
+            % (keep, challenger_urls))
+
+    def action_check_cannibalization(self):
+        """Ask Search Console for query x page and flag the queries where
+        several of our own pages compete."""
+        self.ensure_one()
+        from ..google_api import (
+            SCOPE_GSC, GoogleApiError, gsc_search_analytics)
+        token, email = self._google_token([SCOPE_GSC])
+        prop = self._resolve_gsc_property(token, email)
+        try:
+            rows = gsc_search_analytics(
+                token, prop, dimension=["query", "page"], days=28,
+                row_limit=5000)
+        except GoogleApiError as e:
+            raise UserError(str(e))
+        records = self.env["seo.cannibalization"]._build(self, rows)
+        self.cannibalization_date = fields.Datetime.now()
+        return {
+            "type": "ir.actions.client",
+            "tag": "display_notification",
+            "params": {
+                "type": "success" if records else "info",
+                "message": (
+                    "%d cannibalized quer%s found (%d high severity)."
+                    % (len(records), "y" if len(records) == 1 else "ies",
+                       len(records.filtered(
+                           lambda r: r.severity == "high")))
+                ) if records else
+                "No cannibalization detected — every query has one clear "
+                "landing page.",
+                "next": {"type": "ir.actions.act_window_close"},
+            },
+        }
+
+    # ------------------------------------------------------------------
+    # Internal linking
+    # ------------------------------------------------------------------
+
+    # words that carry no topic and would make a meaningless anchor text
+    STOP_ANCHORS = {
+        "page", "site", "home", "accueil", "plus", "tout", "tous", "toute",
+        "avec", "pour", "dans", "vous", "nous", "votre", "notre", "cette",
+        "sont", "être", "avoir", "faire", "aussi", "ainsi", "alors",
+        "maintenant", "aujourd", "toujours", "jamais", "encore", "déjà",
+        "bien", "très", "peut", "peuvent", "doit", "doivent", "sans",
+        "leur", "leurs", "elles", "ceux", "celle", "celles", "chaque",
+        "https", "http", "www", "com", "the", "and", "for", "with",
+        "your", "our", "this", "that", "from", "have", "will", "more",
+        "also", "here", "there", "when", "what", "which", "about",
+    }
+
+    @classmethod
+    def _keyword_set(cls, audit):
+        """Topic tokens of a page, from its stored top keywords."""
+        tokens = set()
+        for chunk in (audit.top_keywords or "").split(","):
+            word = chunk.split("(")[0].strip().lower()
+            if len(word) > 3 and word not in cls.STOP_ANCHORS:
+                tokens.add(word)
+        return tokens
+
+    def action_suggest_internal_links(self, limit=25):
+        """Cross the internal link graph, the internal PageRank and the
+        Search Console demand to propose concrete links to add."""
+        self.ensure_one()
+        audits = self.audit_ids.filtered(
+            lambda a: a.status_code and a.status_code < 400 and not a.error)
+        if len(audits) < 3:
+            raise UserError(
+                "Crawl the site first — internal linking needs at least a "
+                "few pages to work with.")
+        if not self._has_link_graph():
+            raise UserError(
+                "This crawl predates the internal link graph. Re-crawl the "
+                "site, then run the suggestions again.")
+        topics = {a.id: self._keyword_set(a) for a in audits}
+        # how many pages use each token: a word present everywhere ("contact",
+        # "facturation" in a billing-software site) makes a useless anchor,
+        # the rarer shared word is the one that actually describes the target
+        spread = Counter(token for tokens in topics.values()
+                         for token in tokens)
+        existing = {
+            a.id: set((a.outlinks or "").splitlines()) for a in audits}
+        median_inbound = sorted(a.inbound_links for a in audits)[
+            len(audits) // 2]
+        # targets: pages under-supported internally, demand or depth first
+        targets = audits.filtered(
+            lambda a: a.inbound_links <= max(1, median_inbound // 2)
+            or (a.click_depth or 0) >= 4)
+        sources = audits.sorted(key=lambda a: -a.link_score)[:60]
+        suggestions = []
+        for target in targets:
+            target_topics = topics[target.id]
+            if not target_topics:
+                continue
+            # an anchor should describe the destination: prefer words from
+            # the target's own title over generic body vocabulary
+            title_words = {
+                word.lower()
+                for word in re.findall(r"[^\W\d_]{4,}", target.title or "")
+            } - self.STOP_ANCHORS
+            for source in sources:
+                if source.id == target.id:
+                    continue
+                if target.name in existing.get(source.id, ()):
+                    continue  # the link already exists
+                shared = target_topics & topics[source.id]
+                if len(shared) < 2:
+                    continue
+                score = (
+                    source.link_score
+                    + min(target.gsc_impressions, 500) / 10.0
+                    + 10 * len(shared)
+                    + 5 * max(0, (target.click_depth or 0) - 3)
+                    - 3 * target.inbound_links)
+                anchor = min(shared & title_words or shared,
+                             key=lambda t: (spread[t], -len(t)))
+                reasons = []
+                if target.gsc_impressions:
+                    reasons.append(
+                        "the target already gets %d impressions but only %d "
+                        "internal link(s)"
+                        % (target.gsc_impressions, target.inbound_links))
+                else:
+                    reasons.append(
+                        "the target has only %d internal link(s)"
+                        % target.inbound_links)
+                if (target.click_depth or 0) >= 4:
+                    reasons.append(
+                        "it sits %d clicks from the homepage"
+                        % target.click_depth)
+                reasons.append(
+                    "the source has strong internal authority (%d/100) and "
+                    "shares the topic: %s"
+                    % (source.link_score, ", ".join(sorted(shared)[:4])))
+                suggestions.append({
+                    "site_id": self.id,
+                    "source_url": source.name,
+                    "target_url": target.name,
+                    "anchor": anchor,
+                    "reason": " ; ".join(reasons) + ".",
+                    "source_link_score": source.link_score,
+                    "target_inbound": target.inbound_links,
+                    "target_impressions": target.gsc_impressions,
+                    "score": int(score),
+                    "date": fields.Datetime.now(),
+                })
+        # keep the best suggestions, at most two per target so the plan
+        # spreads over the site instead of piling up on one page
+        suggestions.sort(key=lambda s: -s["score"])
+        per_target, kept = {}, []
+        for suggestion in suggestions:
+            seen = per_target.get(suggestion["target_url"], 0)
+            if seen >= 2:
+                continue
+            per_target[suggestion["target_url"]] = seen + 1
+            kept.append(suggestion)
+            if len(kept) >= limit:
+                break
+        self.link_suggestion_ids.unlink()
+        self.env["seo.link.suggestion"].create(kept)
+        self.link_suggestion_date = fields.Datetime.now()
+        return {
+            "type": "ir.actions.client",
+            "tag": "display_notification",
+            "params": {
+                "type": "success" if kept else "info",
+                "message": (
+                    "%d internal link(s) suggested." % len(kept) if kept else
+                    "No suggestion: the internal linking is already even "
+                    "across the crawled pages."),
+                "next": {"type": "ir.actions.act_window_close"},
+            },
+        }
+
+    def _has_link_graph(self):
+        """Whether the stored crawl carries the internal link graph.
+
+        Crawls made before the graph was recorded have inbound_links = 0
+        everywhere, which would otherwise read as "every page is orphaned"."""
+        self.ensure_one()
+        return any(a.inbound_links or a.outlinks for a in self.audit_ids)
+
+    def _orphan_pages(self):
+        """Crawled pages no other page links to — reachable only through
+        the sitemap, so they get no internal ranking signal at all."""
+        self.ensure_one()
+        if not self._has_link_graph():
+            return self.env["seo.audit"]
+        return self.audit_ids.filtered(
+            lambda a: a.status_code == 200 and not a.error
+            and not a.inbound_links)
+
+    def _report_link_suggestions(self, limit=12):
+        self.ensure_one()
+        return [{
+            "source": self._report_path(s.source_url),
+            "target": self._report_path(s.target_url),
+            "anchor": s.anchor or "",
+            "reason": s.reason or "",
+        } for s in self.link_suggestion_ids[:limit]]
+
+    def _report_cannibalization_rows(self, limit=10):
+        self.ensure_one()
+        return [{
+            "query": c.query,
+            "severity": c.severity,
+            "page_count": c.page_count,
+            "impressions": c.impressions,
+            "clicks": c.clicks,
+            "pages": [self._report_path(line.split(" — ")[0])
+                      + (" — " + line.split(" — ")[1]
+                         if " — " in line else "")
+                      for line in (c.detail or "").splitlines()],
+            "recommendation": c.recommendation or "",
+        } for c in self.cannibalization_ids[:limit]]
+
     def _report_site_issue_lines(self):
         """Site-level issues split into a label and its (shortened) URLs —
         the raw text blob wraps into an unreadable wall in a PDF."""
@@ -1157,20 +1420,30 @@ class SeoSite(models.Model):
                 continue
             values = [ours] + theirs
             best = min(values) if lower_better else max(values)
-            contested = len(set(values)) > 1  # nobody "wins" a tie
-            we_win = contested and ours == best
+            # decide on the displayed values, not the raw ones: two sites
+            # both printed "0.16s" must not have one crowned over a
+            # difference the reader cannot see
+            shown = [fmt % value for value in values]
+            best_shown = fmt % best
+            contested = len(set(shown)) > 1  # nobody "wins" a tie
+            we_win = contested and shown[0] == best_shown
             if we_win:
                 wins += 1
             rows.append({
                 "label": label,
-                "ours": fmt % ours,
+                "ours": shown[0],
                 "we_win": we_win,
-                "theirs": [{"value": fmt % value,
-                            "best": contested and value == best}
-                           for value in theirs],
+                "theirs": [{"value": value,
+                            "best": contested and value == best_shown}
+                           for value in shown[1:]],
             })
         scores = sorted([self.score] + [c.score for c in competitors],
                         reverse=True)
+        # a site whose crawl hit its own page budget has more pages than we
+        # measured: saying otherwise would fake a "we publish more" win
+        capped = [site._bare_host() or site.name
+                  for site in list(competitors) + [self]
+                  if site.max_pages and site.page_count >= site.max_pages]
         return {
             "competitors": [{
                 "name": c._bare_host() or c.name, "score": c.score,
@@ -1180,6 +1453,7 @@ class SeoSite(models.Model):
             "total": len(rows),
             "rank": scores.index(self.score) + 1,
             "field_size": len(competitors) + 1,
+            "capped": capped,
         }
 
     def _report_ai_meta_rows(self, limit=15):

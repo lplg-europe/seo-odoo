@@ -169,6 +169,60 @@
                             <field name="site_issue_count" invisible="1"/>
                             <field name="site_issues" nolabel="1"/>
                         </page>
+                        <page string="Cannibalization" name="cannibalization">
+                            <div class="alert alert-info" role="alert">
+                                When several of your pages rank for the same query,
+                                Google splits the clicks and picks the weaker page.
+                                This asks Search Console for the query × page
+                                breakdown and tells you which page to keep.
+                            </div>
+                            <button name="action_check_cannibalization" type="object"
+                                    string="Check cannibalization (Search Console)"
+                                    icon="fa-clone" class="btn-secondary mb-2"/>
+                            <field name="cannibalization_date" readonly="1"
+                                   invisible="not cannibalization_date"/>
+                            <field name="cannibalization_ids" nolabel="1" readonly="1">
+                                <list decoration-danger="severity == 'high'"
+                                      decoration-warning="severity == 'medium'">
+                                    <field name="query"/>
+                                    <field name="severity"/>
+                                    <field name="page_count"/>
+                                    <field name="impressions"/>
+                                    <field name="clicks"/>
+                                    <field name="best_position"/>
+                                    <field name="winner_url" optional="show"/>
+                                    <button name="action_view_pages" type="object"
+                                            icon="fa-files-o" title="See the competing pages"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Internal linking" name="internal_linking">
+                            <div class="alert alert-info" role="alert">
+                                Crosses the internal link graph, the internal PageRank
+                                and the Search Console demand to answer the question
+                                no tool answers concretely: which exact link should
+                                you add, and with which anchor.
+                            </div>
+                            <button name="action_suggest_internal_links" type="object"
+                                    string="Suggest internal links"
+                                    icon="fa-sitemap" class="btn-secondary mb-2"/>
+                            <field name="link_suggestion_date" readonly="1"
+                                   invisible="not link_suggestion_date"/>
+                            <field name="link_suggestion_ids" nolabel="1" readonly="1">
+                                <list>
+                                    <field name="source_url"/>
+                                    <field name="target_url"/>
+                                    <field name="anchor"/>
+                                    <field name="score"/>
+                                    <field name="source_link_score" optional="show"/>
+                                    <field name="target_inbound" optional="show"/>
+                                    <field name="target_impressions" optional="show"/>
+                                    <field name="reason" optional="hide"/>
+                                    <button name="action_open_target" type="object"
+                                            icon="fa-arrow-right" title="Open the target page"/>
+                                </list>
+                            </field>
+                        </page>
                         <page string="Competitors" name="competitors">
                             <div class="alert alert-info" role="alert">
                                 Link the competitors you want to be compared to.

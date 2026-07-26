@@ -45,6 +45,13 @@ class SeoAudit(models.Model):
         string="Google preview", compute="_compute_google_preview",
         sanitize=False)
     internal_links = fields.Integer(string="Internal links", readonly=True)
+    inbound_links = fields.Integer(
+        string="Inbound internal links", readonly=True,
+        help="How many other crawled pages link to this one — the internal "
+             "vote of confidence Google reads as importance.")
+    outlinks = fields.Text(
+        string="Links to", readonly=True,
+        help="Internal pages this one links to (one URL per line).")
     external_links = fields.Integer(string="External links", readonly=True)
     images = fields.Integer(string="Images", readonly=True)
     images_without_alt = fields.Integer(string="Images without alt", readonly=True)
@@ -383,6 +390,8 @@ class SeoAudit(models.Model):
             "redirect_chain": " ".join(page["redirect_chain"])[:512],
             "word_count": page["word_count"],
             "internal_links": page["internal_links"],
+            "inbound_links": page.get("inbound_links", 0),
+            "outlinks": "\n".join(page.get("outlink_urls") or ()),
             "external_links": page["external_links"],
             "images": page["images"],
             "images_without_alt": page["images_without_alt"],

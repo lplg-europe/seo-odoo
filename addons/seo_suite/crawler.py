@@ -623,6 +623,7 @@ def fetch_page(url, timeout=15):
         "h1": [], "h2_count": 0, "headings": [], "reading_time": 0,
         "word_count": 0,
         "internal_links": 0, "external_links": 0,
+        "inbound_links": 0, "outlink_urls": [],
         "images": 0, "images_without_alt": 0, "links": [],
         "lang": "", "viewport": True, "has_favicon_link": False,
         "og": "missing", "hreflangs": [], "schema_types": [], "schema_count": 0,
@@ -781,16 +782,18 @@ def parse_pagespeed(data):
     return parsed
 
 
-def compute_link_scores(pages, site_netloc=None):
-    """Internal PageRank over the crawled pages, normalized 1-100.
+def internal_link_graph(pages, site_netloc=None):
+    """Adjacency of the crawled pages over their internal links.
 
-    Follows the classic formulation: damping 0.85, 10 iterations, links to
-    non-crawled or self URLs ignored. Sets page["link_score"] in place.
+    Returns (ok_pages, outlinks) where outlinks[i] is the set of indexes
+    page i links to. Built once and shared by the PageRank, the click
+    depths and the internal-linking recommendations — the three of them
+    used to rebuild the very same index independently.
     """
     ok = [p for p in pages
           if p["is_html"] and not p["error"] and 0 < p["status"] < 400]
     if not ok:
-        return
+        return [], []
     if site_netloc is None:
         site_netloc = urlsplit(ok[0]["final_url"]).netloc
     index = {}
@@ -803,17 +806,51 @@ def compute_link_scores(pages, site_netloc=None):
         for href in page["links"]:
             normalized = normalize_link(page["final_url"], href, site_netloc)
             j = index.get(normalized)
-            if j is not None and j != i:
+            if j is not None:
                 targets.add(j)
         outlinks.append(targets)
+    return ok, outlinks
+
+
+def compute_link_graph(pages, site_netloc=None):
+    """Store the internal link graph on each page.
+
+    Sets page["inbound_links"] (how many crawled pages link to it) and
+    page["outlink_urls"] (the final URLs it links to) so the audit can
+    recommend "add a link from X to Y" without re-crawling.
+    """
+    ok, outlinks = internal_link_graph(pages, site_netloc)
+    if not ok:
+        return
+    inbound = [0] * len(ok)
+    for i, targets in enumerate(outlinks):
+        for j in targets:
+            if j != i:
+                inbound[j] += 1
+    for i, page in enumerate(ok):
+        page["inbound_links"] = inbound[i]
+        page["outlink_urls"] = sorted(
+            ok[j]["final_url"] for j in outlinks[i] if j != i)
+
+
+def compute_link_scores(pages, site_netloc=None):
+    """Internal PageRank over the crawled pages, normalized 1-100.
+
+    Follows the classic formulation: damping 0.85, 10 iterations, links to
+    non-crawled or self URLs ignored. Sets page["link_score"] in place.
+    """
+    ok, outlinks = internal_link_graph(pages, site_netloc)
+    if not ok:
+        return
     n = len(ok)
     scores = [1.0 / n] * n
     for _ in range(PAGERANK_ITERATIONS):
         fresh = [(1 - PAGERANK_DAMPING) / n] * n
         for i, targets in enumerate(outlinks):
-            if targets:
-                share = PAGERANK_DAMPING * scores[i] / len(targets)
-                for j in targets:
+            real = [j for j in targets if j != i]  # a self-link votes nothing
+            if real:
+                share = PAGERANK_DAMPING * scores[i] / len(real)
+                for j in real:
                     fresh[j] += share
         scores = fresh
     lo, hi = min(scores), max(scores)
@@ -828,24 +865,9 @@ def compute_click_depths(pages):
     Sets page["click_depth"] (None = not reachable by links, e.g. found
     only in the sitemap) and appends a deep-page issue when >= 5 clicks.
     """
-    ok = [p for p in pages
-          if p["is_html"] and not p["error"] and 0 < p["status"] < 400]
+    ok, adjacency = internal_link_graph(pages)
     if not ok or pages[0] is not ok[0]:
         return  # no usable root to measure from
-    site_netloc = urlsplit(ok[0]["final_url"]).netloc
-    index = {}
-    for i, page in enumerate(ok):
-        index.setdefault(page["url"], i)
-        index.setdefault(page["final_url"], i)
-    adjacency = []
-    for page in ok:
-        targets = set()
-        for href in page["links"]:
-            normalized = normalize_link(page["final_url"], href, site_netloc)
-            j = index.get(normalized)
-            if j is not None:
-                targets.add(j)
-        adjacency.append(targets)
     depths = {0: 0}
     queue = deque([0])
     while queue:
@@ -985,6 +1007,7 @@ def crawl(root_url, max_pages=30, use_sitemap=True, follow_links=True,
 
     compute_link_scores(pages, site_netloc)
     compute_click_depths(pages)
+    compute_link_graph(pages, site_netloc)
 
     # Favicon: any <link rel=icon> on the site, else the /favicon.ico fallback.
     favicon_ok = any(p.get("has_favicon_link") for p in pages)
