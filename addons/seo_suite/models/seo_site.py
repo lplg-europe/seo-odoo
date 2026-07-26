@@ -127,6 +127,18 @@ class SeoSite(models.Model):
              "mentioned.")
     ai_cited_pct = fields.Integer(
         compute="_compute_ai_visibility", string="AI citations (%)")
+    report_frequency = fields.Selection(
+        [("none", "Disabled"), ("weekly", "Weekly"),
+         ("monthly", "Monthly")],
+        string="Client report", default="none", required=True,
+        help="This Odoo instance emails the audit report (PDF + summary) "
+             "for this site on schedule — nothing is sent through any "
+             "third-party service.")
+    report_email = fields.Char(
+        string="Report recipients",
+        help="Comma-separated email addresses (e.g. the client).")
+    report_last_sent = fields.Datetime(
+        string="Report last sent", readonly=True)
 
     @api.depends("ai_prompt_ids.result_ids.brand_mentioned",
                  "ai_prompt_ids.result_ids.domain_cited")
@@ -738,6 +750,142 @@ class SeoSite(models.Model):
                 "type": "success",
             },
         }
+
+    def _analytics_summary_html(self):
+        """Optional traffic block when the web_analytics module is
+        installed and a tracked site matches this host (soft dependency —
+        no hard module coupling)."""
+        self.ensure_one()
+        if "web.analytics.site" not in self.env:
+            return ""
+        host = self._bare_host()
+        candidates = self.env["web.analytics.site"].search([])
+        match = candidates.filtered(
+            lambda s: host and (
+                host in (s.allowed_hosts or "").lower()
+                or host in (s.name or "").lower()))[:1]
+        if not match:
+            return ""
+        return (
+            "<h3>Traffic (30 days)</h3>"
+            "<table cellpadding='4'>"
+            "<tr><td>Visitors</td><td><b>%d</b></td>"
+            "<td>Pageviews</td><td><b>%d</b></td></tr>"
+            "<tr><td>Sessions</td><td><b>%d</b></td>"
+            "<td>Bounce rate</td><td><b>%d%%</b></td></tr>"
+            "</table>" % (match.visitors_30d, match.pageviews_30d,
+                          match.sessions_30d, match.bounce_rate_30d))
+
+    def _report_body_html(self):
+        self.ensure_one()
+        last = self.history_ids[:1]
+        trend = ""
+        if last and len(self.history_ids) > 1:
+            trend = (" (%+d vs previous crawl — %d issue(s) resolved, "
+                     "%d new)" % (last.score_delta,
+                                  last.resolved_issue_count,
+                                  last.new_issue_count))
+        keywords = self.keyword_ids.filtered(
+            lambda k: k.position and k.position < 101).sorted("position")[:5]
+        keyword_rows = "".join(
+            "<tr><td>%s</td><td align='right'>%.1f</td>"
+            "<td align='right'>%+.1f</td><td align='right'>%d</td></tr>"
+            % (k.name, k.position, k.position_delta, k.clicks)
+            for k in keywords)
+        keywords_html = (
+            "<h3>Tracked keywords</h3><table cellpadding='4'>"
+            "<tr><th align='left'>Keyword</th><th>Position</th>"
+            "<th>Δ places</th><th>Clicks</th></tr>%s</table>"
+            % keyword_rows) if keyword_rows else ""
+        return (
+            "<h2>SEO report — %(site)s</h2>"
+            "<p>Overall score: <b>%(score)d/100</b>%(trend)s<br/>"
+            "Last crawl: %(crawl)s — %(pages)d pages, %(issues)d issues "
+            "(%(critical)d critical), %(errors)d pages in error, "
+            "%(broken)d broken links.<br/>"
+            "Indexable: %(indexable)d%% · HTTPS: %(https)d%% · "
+            "Mobile-friendly: %(mobile)d%%</p>"
+            "%(keywords)s%(analytics)s"
+            "<p style='color:#888'>Full details in the attached report. "
+            "Sent automatically by SEO Suite.</p>" % {
+                "site": self.name, "score": self.score, "trend": trend,
+                "crawl": self.last_crawl or "-",
+                "pages": self.page_count, "issues": self.issue_count,
+                "critical": self.critical_count,
+                "errors": self.error_page_count,
+                "broken": self.broken_link_count,
+                "indexable": self.indexable_pct, "https": self.https_pct,
+                "mobile": self.mobile_pct,
+                "keywords": keywords_html,
+                "analytics": self._analytics_summary_html(),
+            })
+
+    def action_send_report(self):
+        """Email the audit report (PDF attached) to the configured
+        recipients — sent by this Odoo instance, per site."""
+        self.ensure_one()
+        if not self.report_email:
+            raise UserError(
+                "Set the report recipients on the site first.")
+        if not self.last_crawl:
+            raise UserError("Crawl the site at least once first.")
+        report = self.env.ref("seo_suite.action_report_seo_site")
+        attachments = []
+        try:
+            content, report_type = self.env["ir.actions.report"]\
+                ._render_qweb_pdf(report, res_ids=self.ids)
+        except Exception:  # noqa: BLE001 — e.g. wkhtmltopdf missing
+            content, report_type = self.env["ir.actions.report"]\
+                ._render_qweb_html(report, res_ids=self.ids)
+        extension = "pdf" if report_type == "pdf" else "html"
+        attachment = self.env["ir.attachment"].create({
+            "name": "seo-report-%s.%s" % (
+                fields.Date.to_string(fields.Date.today()), extension),
+            "raw": content,
+            "res_model": self._name,
+            "res_id": self.id,
+        })
+        attachments.append(attachment.id)
+        self.env["mail.mail"].sudo().create({
+            "subject": "SEO report — %s — score %d/100" % (
+                self.name, self.score),
+            "email_to": self.report_email,
+            "body_html": self._report_body_html(),
+            "attachment_ids": [(6, 0, attachments)],
+        }).send()
+        self.report_last_sent = fields.Datetime.now()
+        return {
+            "type": "ir.actions.client",
+            "tag": "display_notification",
+            "params": {
+                "title": "Report sent",
+                "message": "Emailed to %s (%s attached)." % (
+                    self.report_email, extension.upper()),
+                "type": "success",
+            },
+        }
+
+    @api.model
+    def _cron_send_reports(self):
+        """Daily cron: email due weekly/monthly client reports."""
+        now = fields.Datetime.now()
+        deltas = {"weekly": timedelta(days=7),
+                  "monthly": timedelta(days=30)}
+        sites = self.search([("report_frequency", "in", list(deltas)),
+                             ("report_email", "!=", False)])
+        for site in sites:
+            due = (not site.report_last_sent
+                   or site.report_last_sent
+                   + deltas[site.report_frequency] <= now)
+            if not due or not site.last_crawl:
+                continue
+            try:
+                site.action_send_report()
+                self.env.cr.commit()
+            except Exception:  # noqa: BLE001 — never break the batch
+                _logger.exception(
+                    "Scheduled report failed for %s", site.name)
+                self.env.cr.rollback()
 
     def action_view_audits(self):
         self.ensure_one()

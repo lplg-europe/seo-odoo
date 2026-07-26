@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     "name": "SEO Suite",
-    "version": "19.0.1.12.0",
+    "version": "19.0.1.13.0",
     "summary": "SEO suite for Odoo: on-page, technical and content audit.",
     "description": """
 SEO Suite
@@ -59,7 +59,7 @@ Integrations:
     "author": "LPLG",
     "website": "https://lplg.eu",
     "license": "LGPL-3",
-    "depends": ["base", "base_setup", "web"],
+    "depends": ["base", "base_setup", "web", "mail"],
     "data": [
         "security/ir.model.access.csv",
         "views/seo_audit_views.xml",

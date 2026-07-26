@@ -43,6 +43,10 @@
                     <button name="action_fetch_backlinks" type="object"
                             string="Fetch backlinks" icon="fa-external-link"
                             help="Backlink profile overview via DataForSEO (paid BYO key, ~$0.02)."/>
+                    <button name="action_send_report" type="object"
+                            string="Send report now" icon="fa-envelope-o"
+                            invisible="not report_email or not last_crawl"
+                            help="Email the audit report (PDF + summary) to the configured recipients — sent by this Odoo instance."/>
                 </header>
                 <sheet>
                     <div class="oe_button_box" name="button_box">
@@ -86,6 +90,13 @@
                                    placeholder="auto-detected on first sync"/>
                             <field name="ga4_property_id"
                                    placeholder="e.g. 123456789"/>
+                            <field name="report_frequency"/>
+                            <field name="report_email"
+                                   invisible="report_frequency == 'none'"
+                                   required="report_frequency != 'none'"
+                                   placeholder="client@example.com"/>
+                            <field name="report_last_sent"
+                                   invisible="not report_last_sent"/>
                         </group>
                         <group string="Result">
                             <field name="last_crawl"/>
