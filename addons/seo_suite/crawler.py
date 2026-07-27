@@ -15,7 +15,8 @@ import urllib.robotparser
 import xml.etree.ElementTree as ET
 from collections import deque
 from html.parser import HTMLParser
-from urllib.parse import urldefrag, urlencode, urljoin, urlsplit
+from urllib.parse import (
+    quote, urldefrag, urlencode, urljoin, urlsplit, urlunsplit)
 
 USER_AGENT = "SEO-Suite-Bot/0.2"
 THIN_CONTENT_WORDS = 300
@@ -283,7 +284,63 @@ def same_site(netloc_a, netloc_b):
     return _bare_host(netloc_a) == _bare_host(netloc_b)
 
 
-def normalize_link(base_url, href, site_netloc):
+# Zero-width / bidi marks CMS editors silently paste into hrefs. urlopen
+# cannot encode them and raises UnicodeEncodeError, whose text used to end
+# up verbatim in a client-facing audit.
+_INVISIBLE = dict.fromkeys(
+    [0x200B, 0x200C, 0x200D, 0x200E, 0x200F, 0x2060, 0xFEFF]
+    + list(range(0x202A, 0x202F)) + list(range(0x2066, 0x206A)))
+
+
+def _requestable(url):
+    """URL urlopen can actually send, or None.
+
+    Strips invisible marks and percent-encodes non-ASCII so a truncated or
+    decorated href becomes an honest 404 instead of a crawler stack trace.
+    """
+    cleaned = (url or "").translate(_INVISIBLE).strip()
+    if not cleaned:
+        return None
+    try:
+        cleaned.encode("ascii")
+        return cleaned
+    except UnicodeEncodeError:
+        pass
+    parts = urlsplit(cleaned)
+    try:
+        netloc = parts.netloc.encode("idna").decode("ascii")
+    except (UnicodeError, ValueError):
+        return None
+    return urlunsplit((
+        parts.scheme, netloc, quote(parts.path, safe="/%:@!$&'()*+,;="),
+        quote(parts.query, safe="/%:@!$&'()*+,;=?"), ""))
+
+
+def root_prefix(root_url):
+    """Section a crawl root confines the audit to, as a path ending in "/".
+
+    A bare domain gives "/" (crawl everything). A root like
+    https://example.com/fr/ gives "/fr/": the site record declares a
+    section, so auditing the whole domain would blend other languages
+    into the score.
+    """
+    path = urlsplit(root_url or "").path or "/"
+    if not path.endswith("/"):  # .../fr/index.html -> /fr/
+        path = path.rsplit("/", 1)[0] + "/"
+    return path or "/"
+
+
+def in_prefix(url, prefix):
+    """True when a URL belongs to the crawl's declared section."""
+    if not prefix or prefix == "/":
+        return True
+    path = urlsplit(url).path or "/"
+    # trailing-slash insensitive: /fr, /fr/ and /fr/contact all match /fr/,
+    # while /french/ correctly does not
+    return (path.rstrip("/") + "/").startswith(prefix)
+
+
+def normalize_link(base_url, href, site_netloc, path_prefix="/"):
     """Absolute crawlable same-site URL (fragment stripped), or None."""
     absolute = urldefrag(urljoin(base_url, href.strip()))[0]
     parts = urlsplit(absolute)
@@ -293,7 +350,9 @@ def normalize_link(base_url, href, site_netloc):
         return None
     if parts.path.lower().endswith(SKIP_EXTENSIONS):
         return None
-    return absolute
+    if not in_prefix(absolute, path_prefix):
+        return None
+    return _requestable(absolute)
 
 
 def _norm_for_compare(url):
@@ -957,6 +1016,11 @@ def crawl(root_url, max_pages=30, use_sitemap=True, follow_links=True,
     base = urlsplit(root_page["final_url"] or root_url)
     site_netloc = base.netloc
     origin = "%s://%s" % (base.scheme or "https", base.netloc)
+    # A root that carries a path declares a section (e.g. the /fr/ half of a
+    # bilingual site): confine the audit to it. robots.txt, the sitemap and
+    # the favicon still live at the domain root, so they keep using origin —
+    # only what gets queued is filtered.
+    prefix = root_prefix(root_page["final_url"] or root_url)
     seen = {root_url, root_page["final_url"]}
     referrers = {}
 
@@ -972,7 +1036,7 @@ def crawl(root_url, max_pages=30, use_sitemap=True, follow_links=True,
 
     def enqueue(base_url, hrefs, source, referrer=None):
         for href in hrefs:
-            normalized = normalize_link(base_url, href, site_netloc)
+            normalized = normalize_link(base_url, href, site_netloc, prefix)
             if not normalized:
                 continue
             refs = referrers.setdefault(normalized, [])
@@ -1090,8 +1154,15 @@ def analyze_site(pages, meta=None):
     errors = [p for p in pages if p["error"] or p["status"] >= 400]
     for p in errors:
         label = ("HTTP %d" % p["status"]) if p["status"] else p["error"]
-        issues.append("Page in error: %s (%s)%s"
-                      % (p["url"], label, linked_from(p["url"])))
+        # A URL only ever seen as the target of a link is not "a page of the
+        # site that broke": it is a link pointing at something that does not
+        # exist. Saying otherwise reads as a false positive to the reader,
+        # who checks the URL, finds it was never a page, and stops trusting
+        # the whole report.
+        kind = ("Broken internal link" if p.get("source") == "link"
+                else "Page in error")
+        issues.append("%s: %s (%s)%s"
+                      % (kind, p["url"], label, linked_from(p["url"])))
 
     for link in meta.get("broken_links") or []:
         label = ("HTTP %d" % link["status"]) if link["status"] \
