@@ -618,9 +618,15 @@ class SeoSite(models.Model):
             SCOPE_GSC, GoogleApiError, gsc_inspect_url)
         token, email = self._google_token([SCOPE_GSC])
         prop = self._resolve_gsc_property(token, email)
-        audits = self.audit_ids.filtered(lambda a: a.audit_date)[:50]
-        if not audits:
+        crawled = self.audit_ids.filtered(lambda a: a.audit_date)
+        if not crawled:
             raise UserError("Crawl the site first.")
+        # Inspect the pages with no verdict yet, so successive runs walk
+        # through the whole site instead of re-spending the daily quota on
+        # the same first 50 pages. Once everything is covered, refresh the
+        # oldest results.
+        pending = crawled.filtered(lambda a: not a.index_verdict)
+        audits = (pending or crawled.sorted("google_last_crawl"))[:50]
         done = 0
         quota_message = ""
         for audit in audits:
@@ -1439,6 +1445,20 @@ class SeoSite(models.Model):
             })
         scores = sorted([self.score] + [c.score for c in competitors],
                         reverse=True)
+        rank = scores.index(self.score) + 1
+        ordinal = {1: "1st", 2: "2nd", 3: "3rd"}.get(rank, "%dth" % rank)
+        ahead = ["%s (+%d)" % (c._bare_host() or c.name, self.score - c.score)
+                 for c in competitors if self.score > c.score]
+        behind = ["%s (−%d)" % (c._bare_host() or c.name, c.score - self.score)
+                  for c in competitors if c.score > self.score]
+        # the sentence a reader must not have to reconstruct from the table
+        verdict = "%s of %d" % (ordinal, len(competitors) + 1)
+        if ahead:
+            verdict += " — ahead of %s" % ", ".join(ahead)
+        if behind:
+            verdict += "%s behind %s" % (
+                "," if ahead else " —", ", ".join(behind))
+        verdict += "."
         # a site whose crawl hit its own page budget has more pages than we
         # measured: saying otherwise would fake a "we publish more" win
         capped = [site._bare_host() or site.name
@@ -1451,9 +1471,14 @@ class SeoSite(models.Model):
             "rows": rows,
             "wins": wins,
             "total": len(rows),
-            "rank": scores.index(self.score) + 1,
+            "rank": rank,
             "field_size": len(competitors) + 1,
             "capped": capped,
+            "verdict": verdict,
+            "strengths": [r["label"] for r in rows if r["we_win"]],
+            "weaknesses": [r["label"] for r in rows
+                           if not r["we_win"]
+                           and any(cell["best"] for cell in r["theirs"])],
         }
 
     def _report_ai_meta_rows(self, limit=15):

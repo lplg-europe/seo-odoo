@@ -79,6 +79,7 @@
              (Settings > Configure document layout > Colors), so every agency
              using this open-source module gets its own branding. -->
         <t t-set="brand" t-value="res_company.primary_color or '#31408F'"/>
+        <t t-set="bench" t-value="doc._report_benchmark()"/>
         <t t-set="score_cls" t-value="'good' if doc.score &gt;= 80 else ('mid' if doc.score &gt;= 60 else 'bad')"/>
         <t t-set="score_label" t-value="'Good' if doc.score &gt;= 80 else ('Needs improvement' if doc.score &gt;= 60 else 'Poor')"/>
 
@@ -155,6 +156,11 @@
                 .seo .bucket-advice { color:#6B7280; font-size:8.5pt; margin:0 0 5px; page-break-after:avoid; }
                 .seo .ai-meta { font-size:8pt; }
                 .seo .bench-win { color:#0F6E56; font-weight:bold; }
+                .seo .verdict { font-size:11pt; font-weight:bold; margin:0 0 3px; }
+                /* the reader's own column, anchored so the eye lands on it —
+                   declared after the zebra rule, which has equal specificity */
+                .seo table.lines thead th.ours { background:#0B1533; }
+                .seo table.lines tbody tr td.ours { background:#EEF2FF; }
                 .seo .stale { background:#FAEEDA; border-radius:5px; padding:6px 10px; margin:6px 0; font-size:8.5pt; color:#854F0B; }
                 .seo .site-line-label { font-weight:bold; }
                 .seo .site-line-urls { color:#6B7280; font-family:monospace; font-size:7.5pt; word-break:break-all; padding-top:1px; }
@@ -278,6 +284,49 @@
                     </tr>
                 </table>
 
+                <!-- Competitive benchmark — placed right after the score,
+                     because "81/100" means nothing without a field to compare
+                     it to, and that is the reader's first question. -->
+                <t t-if="bench">
+                    <div style="page-break-inside:avoid;">
+                        <div class="section">Competitive benchmark</div>
+                        <div class="verdict"><t t-out="bench['verdict']"/></div>
+                        <div class="bucket-advice">
+                            Same crawl, same metrics, run on each site.
+                            This site leads on <t t-out="bench['wins']"/> of <t t-out="bench['total']"/> measured criteria.
+                        </div>
+                        <table class="lines">
+                            <thead>
+                                <tr>
+                                    <th>Metric</th>
+                                    <th class="num ours" style="width:14%;">This site</th>
+                                    <t t-foreach="bench['competitors']" t-as="comp">
+                                        <th class="num"><t t-out="comp['name']"/></th>
+                                    </t>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <t t-foreach="bench['rows']" t-as="brow">
+                                    <tr style="page-break-inside:avoid;">
+                                        <td style="font-weight:bold;"><t t-out="brow['label']"/></td>
+                                        <td t-attf-class="num ours {{'bench-win' if brow['we_win'] else ''}}"><t t-out="brow['ours']"/></td>
+                                        <t t-foreach="brow['theirs']" t-as="cell">
+                                            <td t-attf-class="num {{'bench-win' if cell['best'] else ''}}"><t t-out="cell['value']"/></td>
+                                        </t>
+                                    </tr>
+                                </t>
+                            </tbody>
+                        </table>
+                        <div class="capnote">
+                            <t t-if="bench['strengths']"><b>Leading on:</b> <t t-out="', '.join(bench['strengths']).lower()"/>.</t>
+                            <t t-if="bench['weaknesses']"><b>Trailing on:</b> <t t-out="', '.join(bench['weaknesses']).lower()"/>.</t>
+                            Best value of each row in green.<t t-if="bench['capped']">
+                            The crawl budget was reached on <t t-out="', '.join(bench['capped'])"/>,
+                            so their real page count is higher than shown.</t>
+                        </div>
+                    </div>
+                </t>
+
                 <!-- Top issues (complete report: with our recommendations) -->
                 <t t-set="top_issues" t-value="doc._report_top_issues()"/>
                 <t t-if="top_issues">
@@ -310,46 +359,6 @@
                             </t>
                         </tbody>
                     </table>
-                </t>
-
-                <!-- Competitive benchmark -->
-                <t t-set="bench" t-value="doc._report_benchmark()"/>
-                <t t-if="bench">
-                    <div class="section">
-                        Competitive benchmark — rank <t t-out="bench['rank']"/> of <t t-out="bench['field_size']"/>
-                    </div>
-                    <div class="bucket-advice">
-                        Same crawl, same metrics, run on each site.
-                        This site leads on <t t-out="bench['wins']"/> of <t t-out="bench['total']"/> measured criteria.
-                    </div>
-                    <table class="lines">
-                        <thead>
-                            <tr>
-                                <th>Metric</th>
-                                <th class="num" style="width:14%;">This site</th>
-                                <t t-foreach="bench['competitors']" t-as="comp">
-                                    <th class="num"><t t-out="comp['name']"/></th>
-                                </t>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <t t-foreach="bench['rows']" t-as="brow">
-                                <tr style="page-break-inside:avoid;">
-                                    <td style="font-weight:bold;"><t t-out="brow['label']"/></td>
-                                    <td t-attf-class="num {{'bench-win' if brow['we_win'] else ''}}"><t t-out="brow['ours']"/></td>
-                                    <t t-foreach="brow['theirs']" t-as="cell">
-                                        <td t-attf-class="num {{'bench-win' if cell['best'] else ''}}"><t t-out="cell['value']"/></td>
-                                    </t>
-                                </tr>
-                            </t>
-                        </tbody>
-                    </table>
-                    <div class="capnote">
-                        Best value of each row in green. Backlink and AI-visibility rows
-                        appear only for the sites where those scans were run.<t t-if="bench['capped']">
-                        The crawl budget was reached on <t t-out="', '.join(bench['capped'])"/>,
-                        so their real page count is higher than shown.</t>
-                    </div>
                 </t>
 
                 <!-- Action plan by work stream -->

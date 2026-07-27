@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     "name": "SEO Suite",
-    "version": "19.0.1.17.0",
+    "version": "19.0.1.18.0",
     "summary": "SEO suite for Odoo: on-page, technical and content audit.",
     "description": """
 SEO Suite
