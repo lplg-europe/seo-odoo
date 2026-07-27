@@ -61,6 +61,21 @@ class SeoAudit(models.Model):
             },
         }
 
+    def _allow_indexing(self):
+        """Clear the two barriers Odoo controls on the matched page.
+
+        website_indexed = False makes Odoo drop the page from sitemap.xml
+        AND emit <meta name="robots" content="noindex"> — so a page left
+        unchecked can never be indexed, whatever else is done. Flipping it
+        back is the only "click that helps indexing" that really exists.
+        """
+        blocked = self.filtered(
+            lambda a: a.website_page_id and not a.website_page_id.sudo(
+            ).website_indexed)
+        blocked.mapped("website_page_id").sudo().write(
+            {"website_indexed": True})
+        return len(blocked)
+
     def action_create_redirect(self):
         """Open a pre-filled 301 redirect for this (broken) URL."""
         self.ensure_one()

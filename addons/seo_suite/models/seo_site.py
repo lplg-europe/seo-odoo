@@ -1313,6 +1313,20 @@ class SeoSite(models.Model):
             "recommendation": c.recommendation or "",
         } for c in self.cannibalization_ids[:limit]]
 
+    def action_submit_all_unindexed(self):
+        """Push every page Google has not indexed to IndexNow, and lift the
+        Odoo noindex on those that carry one."""
+        self.ensure_one()
+        pending = self.audit_ids.filtered(
+            lambda a: not a.is_indexed and a.status_code == 200
+            and not a.error)
+        if not pending:
+            raise UserError(
+                "Nothing to submit: every crawled page is already indexed, "
+                "or the indexation has not been checked yet — run Check "
+                "indexation first.")
+        return pending.action_submit_index()
+
     def _report_site_issue_lines(self):
         """Site-level issues split into a label and its (shortened) URLs —
         the raw text blob wraps into an unreadable wall in a PDF."""

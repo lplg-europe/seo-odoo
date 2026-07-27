@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 """On-page SEO audit of a URL — backed by the pure-stdlib crawl engine."""
+from urllib.parse import urlsplit
+
 from markupsafe import Markup, escape
 
 from odoo import api, fields, models
@@ -123,6 +125,14 @@ class SeoAudit(models.Model):
         string="Index verdict", readonly=True,
         help="Raw Google URL Inspection verdict: PASS = indexable, "
              "NEUTRAL = excluded, FAIL = error.")
+    is_indexed = fields.Boolean(
+        string="Indexed", compute="_compute_index_status", store=True,
+        help="Checked when Google confirmed the page is in its index "
+             "(last indexation check).")
+    indexnow_date = fields.Datetime(
+        string="Submitted for indexing", readonly=True,
+        help="Last time this URL was pushed to IndexNow (Bing, Yandex, "
+             "Seznam, Naver).")
     index_status = fields.Selection(
         [("indexed", "Indexed"),
          ("not_indexed", "Not indexed"),
@@ -174,6 +184,56 @@ class SeoAudit(models.Model):
         for rec in self:
             rec.index_status = self._INDEX_VERDICTS.get(
                 (rec.index_verdict or "").strip().upper(), False)
+            rec.is_indexed = rec.index_status == "indexed"
+
+    def action_submit_index(self):
+        """Do everything that can actually be done to get a page indexed.
+
+        Removes the barriers we control (the Odoo page's noindex/sitemap
+        flag, through the website bridge when installed) and pushes the
+        URL to IndexNow so Bing, Yandex, Seznam and Naver crawl it within
+        minutes. Google cannot be forced: it is told through the sitemap
+        and the internal links, and decides on its own.
+        """
+        from ..indexnow import IndexNowError, submit
+        pending = self.filtered(lambda a: not a.is_indexed)
+        if not pending:
+            raise UserError(
+                "Every selected page is already indexed by Google.")
+        get_param = self.env["ir.config_parameter"].sudo().get_param
+        key = get_param("seo_suite.indexnow_key")
+        location = get_param("seo_suite.indexnow_key_location")
+        unblocked = pending._allow_indexing()
+        by_host = {}
+        for audit in pending:
+            host = urlsplit(audit.final_url or audit.name).netloc
+            by_host.setdefault(host, []).append(
+                audit.final_url or audit.name)
+        try:
+            for host, urls in by_host.items():
+                submit(host, key, urls, key_location=location)
+        except IndexNowError as exc:
+            raise UserError(str(exc))
+        pending.write({"indexnow_date": fields.Datetime.now()})
+        message = ("%d URL(s) submitted to Bing, Yandex, Seznam and Naver."
+                   % len(pending))
+        if unblocked:
+            message += (" %d page(s) were also un-hidden in Odoo (removed "
+                        "from noindex and put back in the sitemap)."
+                        % unblocked)
+        message += (" Google does not accept submissions: it will pick the "
+                    "pages up through the sitemap and your internal links.")
+        return {
+            "type": "ir.actions.client",
+            "tag": "display_notification",
+            "params": {"type": "success", "message": message,
+                       "next": {"type": "ir.actions.act_window_close"}},
+        }
+
+    def _allow_indexing(self):
+        """Lift the indexing barriers we control. Overridden by the
+        website bridge, which knows how to flip the Odoo page flag."""
+        return 0
 
     @api.depends("title", "final_url", "meta_description")
     def _compute_google_preview(self):

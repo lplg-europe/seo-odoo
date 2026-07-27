@@ -37,6 +37,21 @@ class ResConfigSettings(models.TransientModel):
         string="AI model override",
         config_parameter="seo_suite.ai_model",
         help="Optional. Defaults: claude-opus-4-8 / gemini-2.5-flash.")
+    seo_indexnow_key = fields.Char(
+        string="IndexNow key",
+        config_parameter="seo_suite.indexnow_key",
+        help="Free, no account needed. Generate any 8-128 character "
+             "hexadecimal string, publish it as a text file containing "
+             "exactly that string at https://yoursite/<key>.txt, and paste "
+             "it here.\n"
+             "Submitting a URL then tells Bing, Yandex, Seznam and Naver to "
+             "crawl it within minutes. Google does not participate in "
+             "IndexNow — no tool can force a Google indexation.")
+    seo_indexnow_key_location = fields.Char(
+        string="IndexNow key URL",
+        config_parameter="seo_suite.indexnow_key_location",
+        help="Optional. Only needed when the key file is not at the site "
+             "root, e.g. https://example.com/docs/<key>.txt")
     seo_google_service_account = fields.Char(
         string="Google service account (JSON key)",
         config_parameter="seo_suite.google_service_account",

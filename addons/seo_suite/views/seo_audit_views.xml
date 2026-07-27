@@ -14,10 +14,17 @@
                 <field name="word_count"/>
                 <field name="issue_count"/>
                 <field name="score" widget="progressbar" optional="show"/>
-                <field name="index_status" optional="show" widget="badge"
+                <field name="is_indexed" string="Indexed" widget="boolean_toggle"
+                       readonly="1" optional="show"/>
+                <button name="action_submit_index" type="object"
+                        string="Index" icon="fa-paper-plane"
+                        title="Submit for indexing: lifts the Odoo noindex and pushes the URL to Bing, Yandex, Seznam and Naver"
+                        invisible="is_indexed"/>
+                <field name="indexnow_date" optional="hide"/>
+                <field name="index_status" optional="hide" widget="badge"
                        decoration-success="index_status == 'indexed'"
                        decoration-danger="index_status in ('not_indexed', 'error')"/>
-                <field name="index_state" optional="hide"/>
+                <field name="index_state" optional="show"/>
                 <field name="gsc_clicks" optional="hide"/>
                 <field name="gsc_impressions" optional="hide"/>
                 <field name="site_id" optional="hide"/>

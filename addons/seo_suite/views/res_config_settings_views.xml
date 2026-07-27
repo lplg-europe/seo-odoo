@@ -18,6 +18,12 @@
                                  help="Paste the full JSON key of a Google Cloud service account (Search Console API + Analytics Data API enabled), then add its email to your Search Console property and GA4 property. See the field tooltip for the 3 steps.">
                             <field name="seo_google_service_account" password="True"/>
                         </setting>
+                        <setting string="IndexNow (Bing, Yandex, Seznam, Naver)"
+                                 help="Free, no account. Publish a key file at your site root, paste the key here, and the Index button pushes URLs for crawling within minutes. Google does not take part in IndexNow — it is reached through the sitemap and internal links.">
+                            <field name="seo_indexnow_key"/>
+                            <field name="seo_indexnow_key_location"
+                                   placeholder="https://example.com/&lt;key&gt;.txt (only if not at the root)"/>
+                        </setting>
                         <setting string="AI recommendations"
                                  help="BYO key (Claude or Gemini) for AI title/meta suggestions, heading rewrites and JSON-LD generation — the human always validates before publishing.">
                             <field name="seo_ai_provider"/>

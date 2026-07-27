@@ -43,6 +43,10 @@
                     <button name="action_fetch_backlinks" type="object"
                             string="Fetch backlinks" icon="fa-external-link"
                             help="Backlink profile overview via DataForSEO (paid BYO key, ~$0.02)."/>
+                    <button name="action_submit_all_unindexed" type="object"
+                            string="Submit unindexed" icon="fa-paper-plane"
+                            invisible="not_indexed_page_count == 0"
+                            help="For every page Google has not indexed: lift the Odoo noindex and push the URL to Bing, Yandex, Seznam and Naver."/>
                     <button name="action_send_report" type="object"
                             string="Send report now" icon="fa-envelope-o"
                             invisible="not report_email or not last_crawl"
@@ -156,11 +160,15 @@
                                     <field name="gsc_clicks" optional="show"/>
                                     <field name="gsc_position" optional="show"/>
                                     <field name="ga_views" optional="hide"/>
-                                    <field name="index_status" optional="show"
-                                           widget="badge"
-                                           decoration-success="index_status == 'indexed'"
-                                           decoration-danger="index_status in ('not_indexed', 'error')"/>
+                                    <field name="is_indexed" string="Indexed"
+                                           widget="boolean_toggle" readonly="1"
+                                           optional="show"/>
+                                    <button name="action_submit_index" type="object"
+                                            string="Index" icon="fa-paper-plane"
+                                            title="Submit for indexing: lifts the Odoo noindex and pushes the URL to Bing, Yandex, Seznam and Naver"
+                                            invisible="is_indexed"/>
                                     <field name="index_state" optional="show"/>
+                                    <field name="indexnow_date" optional="hide"/>
                                     <field name="response_time" optional="hide"/>
                                     <field name="page_size_kb" optional="hide"/>
                                     <field name="flesch_score" optional="hide"/>
