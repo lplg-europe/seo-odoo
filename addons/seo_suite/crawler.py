@@ -1167,8 +1167,15 @@ def analyze_site(pages, meta=None):
     for link in meta.get("broken_links") or []:
         label = ("HTTP %d" % link["status"]) if link["status"] \
             else link.get("error", "unreachable")
-        issues.append("Broken internal link: %s (%s)%s"
-                      % (link["url"], label, linked_from(link["url"])))
+        # Same distinction as above: a URL the site publishes in its own
+        # sitemap is a page it declares, not a link. Calling it a broken
+        # link sends the reader looking for a link that does not exist.
+        refs = referrers.get(link["url"]) or []
+        kind = ("Page in error (declared in sitemap.xml)"
+                if refs and all(r == "sitemap.xml" for r in refs)
+                else "Broken internal link")
+        issues.append("%s: %s (%s)%s"
+                      % (kind, link["url"], label, linked_from(link["url"])))
 
     # Orphan pages — only meaningful when every discovered URL was crawled.
     if meta.get("complete") and referrers and len(pages) > 1:
