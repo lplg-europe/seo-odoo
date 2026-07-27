@@ -107,7 +107,15 @@ class WebAnalyticsFunnelStep(models.Model):
     @api.depends("funnel_id", "sequence", "step_type", "pattern",
                  "funnel_id.period_days")
     def _compute_counts(self):
-        for funnel in self.mapped("funnel_id"):
+        # a funnel being created has a NewId: its steps have no sessions
+        # yet, and querying on an unsaved id would fail
+        unsaved = self.filtered(
+            lambda s: s.funnel_id and not isinstance(s.funnel_id.id, int))
+        for step in unsaved:
+            step.sessions_count = 0
+            step.conversion_pct = 0.0
+            step.drop_pct = 0.0
+        for funnel in (self - unsaved).mapped("funnel_id"):
             reached = funnel._step_sessions()
             first = None
             previous_count = None

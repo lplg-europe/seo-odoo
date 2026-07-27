@@ -54,7 +54,10 @@ class WebAnalyticsGoal(models.Model):
         Event = self.env["web.analytics.event"]
         since = fields.Datetime.now() - timedelta(days=30)
         for rec in self:
-            if not rec.pattern or not rec.site_id:
+            # unsaved goal or unsaved site: nothing to count yet, and a
+            # NewId must never reach a query
+            if (not rec.pattern or not rec.site_id
+                    or not isinstance(rec.site_id.id, int)):
                 rec.conversions_30d = 0
                 rec.conversion_rate = 0.0
                 continue

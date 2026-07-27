@@ -77,12 +77,24 @@ class WebAnalyticsSite(models.Model):
             [], ["visitor_hash:count_distinct"])
         return rows[0][0] if rows else 0
 
+    _STAT_FIELDS = (
+        "live_visitors", "visitors_today", "pageviews_today", "visitors_30d",
+        "pageviews_30d", "sessions_30d", "bounce_rate_30d",
+        "avg_session_seconds_30d", "lcp_p75_ms")
+
     def _compute_stats(self):
         Event = self.env["web.analytics.event"]
         now = fields.Datetime.now()
         today = now.replace(hour=0, minute=0, second=0, microsecond=0)
         month = now - timedelta(days=30)
         for rec in self:
+            # A record being created has a NewId, which psycopg2 cannot
+            # adapt into the raw SQL below — and an unsaved site has no
+            # events anyway.
+            if not isinstance(rec.id, int):
+                for name in self._STAT_FIELDS:
+                    rec[name] = 0
+                continue
             base = [("site_id", "=", rec.id)]
             rec.live_visitors = rec._distinct_visitors(
                 now - timedelta(minutes=5))

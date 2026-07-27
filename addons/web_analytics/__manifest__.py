@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     "name": "Web Analytics",
-    "version": "19.0.2.2.0",
+    "version": "19.0.2.3.0",
     "summary": "Privacy-first, cookieless web analytics inside Odoo "
                "(Plausible-style).",
     "description": """
