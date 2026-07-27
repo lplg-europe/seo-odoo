@@ -121,8 +121,15 @@ class SeoAudit(models.Model):
         string="Avg position", digits=(6, 1), readonly=True)
     index_verdict = fields.Char(
         string="Index verdict", readonly=True,
-        help="Google URL Inspection verdict: PASS = indexable, "
+        help="Raw Google URL Inspection verdict: PASS = indexable, "
              "NEUTRAL = excluded, FAIL = error.")
+    index_status = fields.Selection(
+        [("indexed", "Indexed"),
+         ("not_indexed", "Not indexed"),
+         ("error", "Error")],
+        string="Google index", compute="_compute_index_status", store=True,
+        help="Is this page actually in the Google index? Empty means it "
+             "has not been inspected yet — run Check indexation on the site.")
     index_state = fields.Char(
         string="Coverage", readonly=True,
         help='Google coverage state, e.g. "Submitted and indexed".')
@@ -153,6 +160,20 @@ class SeoAudit(models.Model):
     critical_count = fields.Integer(string="Critical", readonly=True)
     warning_count = fields.Integer(string="Warnings", readonly=True)
     info_count = fields.Integer(string="Info", readonly=True)
+
+    # Google's raw vocabulary reads as nothing to a client: PASS/NEUTRAL
+    # say neither "indexed" nor "not indexed".
+    _INDEX_VERDICTS = {
+        "PASS": "indexed",
+        "NEUTRAL": "not_indexed",
+        "FAIL": "error",
+    }
+
+    @api.depends("index_verdict")
+    def _compute_index_status(self):
+        for rec in self:
+            rec.index_status = self._INDEX_VERDICTS.get(
+                (rec.index_verdict or "").strip().upper(), False)
 
     @api.depends("title", "final_url", "meta_description")
     def _compute_google_preview(self):

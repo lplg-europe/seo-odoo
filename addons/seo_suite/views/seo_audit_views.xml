@@ -14,6 +14,12 @@
                 <field name="word_count"/>
                 <field name="issue_count"/>
                 <field name="score" widget="progressbar" optional="show"/>
+                <field name="index_status" optional="show" widget="badge"
+                       decoration-success="index_status == 'indexed'"
+                       decoration-danger="index_status in ('not_indexed', 'error')"/>
+                <field name="index_state" optional="hide"/>
+                <field name="gsc_clicks" optional="hide"/>
+                <field name="gsc_impressions" optional="hide"/>
                 <field name="site_id" optional="hide"/>
                 <field name="audit_date"/>
             </list>
@@ -181,10 +187,46 @@
         </field>
     </record>
 
+    <record id="view_seo_audit_search" model="ir.ui.view">
+        <field name="name">seo.audit.search</field>
+        <field name="model">seo.audit</field>
+        <field name="arch" type="xml">
+            <search string="Pages">
+                <field name="name" string="URL"/>
+                <field name="title"/>
+                <field name="site_id"/>
+                <filter name="indexed" string="Indexed by Google"
+                        domain="[('index_status', '=', 'indexed')]"/>
+                <filter name="not_indexed" string="Not indexed"
+                        domain="[('index_status', 'in', ['not_indexed', 'error'])]"/>
+                <filter name="not_checked" string="Indexation not checked"
+                        domain="[('index_status', '=', False)]"/>
+                <separator/>
+                <filter name="has_impressions" string="Seen in search results"
+                        domain="[('gsc_impressions', '&gt;', 0)]"/>
+                <filter name="no_impressions" string="Never shown in search"
+                        domain="[('gsc_impressions', '=', 0)]"/>
+                <separator/>
+                <filter name="with_issues" string="With issues"
+                        domain="[('issue_count', '&gt;', 0)]"/>
+                <filter name="in_error" string="Pages in error"
+                        domain="[('status_code', '&gt;=', 400)]"/>
+                <separator/>
+                <filter name="group_index" string="Google index"
+                        context="{'group_by': 'index_status'}"/>
+                <filter name="group_coverage" string="Coverage state"
+                        context="{'group_by': 'index_state'}"/>
+                <filter name="group_site" string="Site"
+                        context="{'group_by': 'site_id'}"/>
+            </search>
+        </field>
+    </record>
+
     <record id="action_seo_audit" model="ir.actions.act_window">
         <field name="name">SEO Audits</field>
         <field name="res_model">seo.audit</field>
         <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_seo_audit_search"/>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">Run your first SEO audit</p>
             <p>Enter a URL, click "Run audit" and SEO Suite analyzes the page
