@@ -21,6 +21,13 @@ class SeoKeyword(models.Model):
     site_id = fields.Many2one(
         "seo.site", string="Site", required=True,
         ondelete="cascade", index=True)
+    origin = fields.Selection(
+        [("manual", "Tracked on purpose"),
+         ("discovered", "Found in Search Console")],
+        string="Origin", default="manual", required=True, readonly=True,
+        help="Manual keywords are the ones you decided to rank for. "
+             "Discovered ones are queries Google already shows you for — "
+             "useful to see the demand you did not plan for.")
     position = fields.Float(
         string="Position", digits=(6, 1), readonly=True,
         help="Average Google position over the last 28 days "

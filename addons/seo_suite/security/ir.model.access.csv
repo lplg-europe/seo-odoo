@@ -10,3 +10,4 @@ access_seo_ai_prompt_user,seo.ai.prompt.user,model_seo_ai_prompt,base.group_user
 access_seo_ai_prompt_result_user,seo.ai.prompt.result.user,model_seo_ai_prompt_result,base.group_user,1,1,1,1
 access_seo_cannibalization_user,seo.cannibalization.user,model_seo_cannibalization,base.group_user,1,1,1,1
 access_seo_link_suggestion_user,seo.link.suggestion.user,model_seo_link_suggestion,base.group_user,1,1,1,1
+access_seo_search_performance_user,seo.search.performance.user,model_seo_search_performance,base.group_user,1,1,1,1

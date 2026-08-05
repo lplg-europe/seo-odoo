@@ -7,4 +7,5 @@ from . import seo_cannibalization
 from . import seo_crawl_history
 from . import seo_link_suggestion
 from . import seo_keyword
+from . import seo_search_performance
 from . import seo_site

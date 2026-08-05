@@ -1,0 +1,10 @@
+// The SEO site form has no chatter, so Odoo's 1400px sheet cap leaves a
+// third of a wide screen empty while the crawled-page list — a dozen
+// columns of URLs, scores and Search Console figures — is squeezed into
+// what remains. The cap exists to keep prose readable; this form is a
+// data table, so it gets the full width instead.
+//
+// Scoped to the class set on the <form> tag, never to form views at large.
+.o_form_view.o_form_nosheet_full > .o_form_sheet_bg > .o_form_sheet {
+    max-width: 100%;
+}

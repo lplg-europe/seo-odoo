@@ -10,6 +10,8 @@
                   decoration-muted="position &gt;= 101">
                 <field name="name"/>
                 <field name="site_id"/>
+                <field name="origin" optional="show" widget="badge"
+                       decoration-info="origin == 'discovered'"/>
                 <field name="position"/>
                 <field name="position_delta"/>
                 <field name="clicks"/>
@@ -111,15 +113,57 @@
         </field>
     </record>
 
+    <record id="view_seo_keyword_search" model="ir.ui.view">
+        <field name="name">seo.keyword.search</field>
+        <field name="model">seo.keyword</field>
+        <field name="arch" type="xml">
+            <search string="Keywords">
+                <field name="name" string="Keyword"/>
+                <field name="site_id"/>
+                <field name="best_page" string="Ranking page"/>
+                <filter name="on_page_one" string="On page 1"
+                        domain="[('position', '&lt;=', 10),
+                                 ('position', '&gt;', 0)]"/>
+                <filter name="almost_there" string="Positions 4-20"
+                        domain="[('position', '&gt;=', 4),
+                                 ('position', '&lt;=', 20)]"
+                        help="The quickest wins: one push reaches page 1."/>
+                <filter name="with_clicks" string="Bringing clicks"
+                        domain="[('clicks', '&gt;', 0)]"/>
+                <separator/>
+                <filter name="manual" string="My targets"
+                        domain="[('origin', '=', 'manual')]"/>
+                <filter name="discovered" string="Found in Search Console"
+                        domain="[('origin', '=', 'discovered')]"
+                        help="Queries Google already shows you for without you declaring them — the demand you did not plan for."/>
+                <!-- Odoo 19's search <group> takes neither string nor
+                     expand and holds fields only; group-by filters live
+                     at search level and the web client files them under
+                     "Group By" on its own. -->
+                <separator/>
+                <filter name="group_site" string="Site"
+                        context="{'group_by': 'site_id'}"/>
+                <filter name="group_origin" string="Origin"
+                        context="{'group_by': 'origin'}"/>
+                <filter name="group_page" string="Ranking page"
+                        context="{'group_by': 'best_page'}"/>
+            </search>
+        </field>
+    </record>
+
     <record id="action_seo_keyword" model="ir.actions.act_window">
         <field name="name">Keywords</field>
         <field name="res_model">seo.keyword</field>
         <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_seo_keyword_search"/>
+        <field name="context">{'search_default_group_origin': 1}</field>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">Track your target keywords</p>
             <p>Add the queries you want to rank on. Every Google sync stores
                the Search Console position, building a trend per keyword —
                and DataForSEO (optional, paid) adds volumes and live SERPs.</p>
+            <p>Syncing Google also brings in the queries you already rank
+               for without having declared them.</p>
         </field>
     </record>
 

@@ -23,7 +23,11 @@
         <field name="name">seo.site.form</field>
         <field name="model">seo.site</field>
         <field name="arch" type="xml">
-            <form string="SEO Site">
+            <!-- No chatter on this model, so the default sheet width would
+                 leave a third of the screen empty while the crawled-page
+                 list is squeezed. Full width gives the tables the room
+                 they need. -->
+            <form string="SEO Site" class="o_form_nosheet_full">
                 <header>
                     <button name="action_crawl" type="object"
                             string="Crawl site" class="btn-primary"
@@ -74,6 +78,13 @@
                                 invisible="critical_count == 0">
                             <field name="critical_count" widget="statinfo"
                                    string="Critical"/>
+                        </button>
+                        <button name="action_view_performance" type="object"
+                                class="oe_stat_button" icon="fa-bar-chart"
+                                invisible="performance_day_count == 0"
+                                help="Clicks and impressions day by day, as far back as Search Console keeps them.">
+                            <field name="clicks_28d" widget="statinfo"
+                                   string="Clicks (28d)"/>
                         </button>
                         <button name="action_view_history" type="object"
                                 class="oe_stat_button" icon="fa-line-chart"

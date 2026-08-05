@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="view_seo_performance_graph" model="ir.ui.view">
+        <field name="name">seo.search.performance.graph</field>
+        <field name="model">seo.search.performance</field>
+        <field name="arch" type="xml">
+            <!-- Impressions dwarf clicks by an order of magnitude, so
+                 they are hidden by default: the clicks curve is the one
+                 that answers "is traffic growing?". Both measures stay
+                 one click away in the Measures menu. -->
+            <!-- Field order matters: the first groupby is the X axis, the
+                 second splits into one coloured series per value. Time on
+                 X, sites as series — the reverse turns 36 weeks into a
+                 legend and makes the chart unreadable.
+                 stacked="0" because these series are compared, not added:
+                 stacking piles one site on top of the other, so the week a
+                 client's history begins shows a spike that is nothing but
+                 the sum of two unrelated sites. -->
+            <!-- Remaining honest limit: a line chart draws 0 wherever a
+                 site has no row, so a site tracked for one week still
+                 shows a flat line across the whole axis. That is why the
+                 multi-site menu opens on the pivot instead. -->
+            <!-- Only clicks is declared, so only clicks is active on open:
+                 impressions are ten times larger and would flatten the
+                 curve. The other measures are NOT declared here on
+                 purpose — Odoo lists every numeric field of the model in
+                 the Measures menu by itself. Declaring them with
+                 invisible="1" removes them from that menu instead of
+                 merely deactivating them. -->
+            <graph string="Search traffic" type="line" sample="1" stacked="0">
+                <field name="date" interval="week"/>
+                <field name="site_id"/>
+                <field name="clicks" type="measure"/>
+            </graph>
+        </field>
+    </record>
+
+    <record id="view_seo_performance_pivot" model="ir.ui.view">
+        <field name="name">seo.search.performance.pivot</field>
+        <field name="model">seo.search.performance</field>
+        <field name="arch" type="xml">
+            <!-- Sites in rows, months in columns: the layout that answers
+                 "how does this client compare to that one" at a glance,
+                 which a line chart cannot do when their histories differ
+                 in length. -->
+            <pivot string="Search traffic" sample="1">
+                <field name="site_id" type="row"/>
+                <field name="date" interval="month" type="col"/>
+                <field name="clicks" type="measure"/>
+                <field name="impressions" type="measure"/>
+                <field name="ctr" type="measure"/>
+                <field name="position" type="measure"/>
+            </pivot>
+        </field>
+    </record>
+
+    <record id="view_seo_performance_list" model="ir.ui.view">
+        <field name="name">seo.search.performance.list</field>
+        <field name="model">seo.search.performance</field>
+        <field name="arch" type="xml">
+            <list string="Daily performance" create="0">
+                <field name="date"/>
+                <field name="site_id" optional="hide"/>
+                <field name="clicks" sum="Total"/>
+                <field name="impressions" sum="Total"/>
+                <field name="ctr" avg="Average"/>
+                <field name="position" avg="Average"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_seo_performance_search" model="ir.ui.view">
+        <field name="name">seo.search.performance.search</field>
+        <field name="model">seo.search.performance</field>
+        <field name="arch" type="xml">
+            <search string="Search traffic">
+                <field name="site_id"/>
+                <filter name="last_month" string="Last 30 days"
+                        domain="[('date', '&gt;=',
+                                  (context_today() - datetime.timedelta(days=30)).strftime('%Y-%m-%d'))]"/>
+                <filter name="last_year" string="Last 12 months"
+                        domain="[('date', '&gt;=',
+                                  (context_today() - datetime.timedelta(days=365)).strftime('%Y-%m-%d'))]"/>
+                <filter name="with_clicks" string="Days with clicks"
+                        domain="[('clicks', '&gt;', 0)]"/>
+                <separator/>
+                <filter name="group_site" string="Site"
+                        context="{'group_by': 'site_id'}"/>
+                <filter name="group_month" string="Month"
+                        context="{'group_by': 'date:month'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_seo_performance" model="ir.actions.act_window">
+        <field name="name">Search traffic</field>
+        <field name="res_model">seo.search.performance</field>
+        <!-- Pivot first, deliberately. A line chart aligns every series on
+             one axis and draws a zero wherever a site has no row, so a
+             client onboarded last week appears to have had nine months of
+             zero traffic. The pivot leaves those cells blank, which is the
+             truth: no data is not the same as no clicks. The graph stays
+             one click away, and is the right default per site. -->
+        <field name="view_mode">pivot,graph,list</field>
+        <field name="search_view_id" ref="view_seo_performance_search"/>
+        <!-- Sites never share a history depth, so they are kept apart by
+             default: one curve per site tells the truth, their sum does
+             not. The per-site stat button opens this already filtered. -->
+        <field name="context">{'fill_temporal': False,
+                               'search_default_group_site': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">No Search Console data yet</p>
+            <p>Sync Google data on a site: every sync stores the daily
+               clicks, impressions, CTR and average position reported by
+               Search Console, going back as far as Google keeps them
+               (16 months).</p>
+        </field>
+    </record>
+
+    <menuitem id="menu_seo_performance" name="Search traffic"
+              parent="menu_seo_root" action="action_seo_performance"
+              sequence="9"/>
+
+</odoo>

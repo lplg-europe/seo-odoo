@@ -91,6 +91,14 @@ class SeoSite(models.Model):
         "seo.crawl.history", "site_id", string="Crawl history")
     history_count = fields.Integer(
         compute="_compute_history_count", string="Crawls")
+    performance_ids = fields.One2many(
+        "seo.search.performance", "site_id", string="Daily performance")
+    performance_day_count = fields.Integer(
+        compute="_compute_performance", string="Days tracked")
+    clicks_28d = fields.Integer(
+        compute="_compute_performance", string="Clicks (28d)")
+    impressions_28d = fields.Integer(
+        compute="_compute_performance", string="Impressions (28d)")
     keyword_ids = fields.One2many(
         "seo.keyword", "site_id", string="Tracked keywords")
     competitor_ids = fields.Many2many(
@@ -197,6 +205,24 @@ class SeoSite(models.Model):
     def _compute_history_count(self):
         for rec in self:
             rec.history_count = len(rec.history_ids)
+
+    @api.depends("performance_ids.clicks", "performance_ids.impressions")
+    def _compute_performance(self):
+        """Headline traffic figures over the last 28 days.
+
+        Search Console only consolidates data after two to three days, so
+        the window ends there rather than today — otherwise every visit to
+        the form shows a drop that is an artefact of Google's pipeline,
+        not of the site.
+        """
+        cutoff = fields.Date.today() - timedelta(days=31)
+        recent_end = fields.Date.today() - timedelta(days=3)
+        for rec in self:
+            window = rec.performance_ids.filtered(
+                lambda p: cutoff <= p.date <= recent_end)
+            rec.performance_day_count = len(rec.performance_ids)
+            rec.clicks_28d = sum(window.mapped("clicks"))
+            rec.impressions_28d = sum(window.mapped("impressions"))
 
     @api.depends("keyword_ids")
     def _compute_keyword_count(self):
@@ -668,6 +694,7 @@ class SeoSite(models.Model):
             for row in query_rows[:50]
         ]
         self._sync_keywords(token, prop, query_rows)
+        self._sync_search_performance(token, prop)
         self.write({
             "google_last_sync": fields.Datetime.now(),
             "gsc_top_queries": "\n".join(top) or "No query data yet",
@@ -682,10 +709,58 @@ class SeoSite(models.Model):
                 sum(with_data.mapped("gsc_impressions")), len(query_rows),
                 "y" if len(query_rows) == 1 else "ies"))
 
+    # How many of the queries Google reports become tracked keywords on
+    # their own. Enough to see the real demand, few enough to keep the
+    # list readable and the history table from exploding.
+    DISCOVERED_KEYWORDS = 50
+    # Search Console keeps 16 months. Asking for 16 months on every sync
+    # costs one extra API call and backfills the whole curve the first
+    # time, so a site added today still shows a year of history.
+    PERFORMANCE_DAYS = 480
+
+    def _sync_search_performance(self, token, prop):
+        """Store the daily clicks/impressions curve from Search Console."""
+        self.ensure_one()
+        from ..google_api import GoogleApiError, gsc_search_analytics
+        try:
+            rows = gsc_search_analytics(
+                token, prop, dimension="date",
+                days=self.PERFORMANCE_DAYS, row_limit=self.PERFORMANCE_DAYS)
+        except GoogleApiError:
+            return 0  # traffic history is a bonus, never a reason to fail
+        return self.env["seo.search.performance"]._store_rows(self, rows)
+
+    def _discover_keywords(self, query_rows):
+        """Turn the queries Google reports into real keyword records.
+
+        Until now those queries lived in a text blob, which no list, filter
+        or graph can read. Creating them as seo.keyword records reuses the
+        model that already carries position, clicks, CTR and a history —
+        so the trend graph works for discovered queries exactly as it does
+        for the ones typed in by hand.
+
+        Keywords are never removed: a query that stops appearing is a fact
+        worth keeping, and deleting it would erase its history.
+        """
+        self.ensure_one()
+        known = {k.name.strip().lower() for k in self.keyword_ids}
+        fresh = [
+            {"site_id": self.id, "name": row["key"].strip(),
+             "origin": "discovered"}
+            for row in query_rows[:self.DISCOVERED_KEYWORDS]
+            if row["key"].strip()
+            and row["key"].strip().lower() not in known
+        ]
+        if fresh:
+            self.env["seo.keyword"].create(fresh)
+            self.invalidate_recordset(["keyword_ids"])
+        return len(fresh)
+
     def _sync_keywords(self, token, prop, query_rows):
         """Refresh tracked keywords from GSC and add a daily history point."""
         from ..google_api import GoogleApiError, gsc_search_analytics
         from .seo_keyword import POSITION_NOT_FOUND
+        self._discover_keywords(query_rows)
         if not self.keyword_ids:
             return
         by_query = {row["key"].lower(): row for row in query_rows}
@@ -1103,6 +1178,20 @@ class SeoSite(models.Model):
             "view_mode": "list",
             "domain": [("site_id", "=", self.id)],
             "context": {"search_default_group_category": 1},
+        }
+
+    def action_view_performance(self):
+        """Stat button: the Search Console traffic curve for this site."""
+        self.ensure_one()
+        return {
+            "type": "ir.actions.act_window",
+            "name": "Search traffic — %s" % self.name,
+            "res_model": "seo.search.performance",
+            "view_mode": "graph,pivot,list",
+            "domain": [("site_id", "=", self.id)],
+            # Same reason as the crawl history: a day Google has no data
+            # for is not a day with zero clicks.
+            "context": {"default_site_id": self.id, "fill_temporal": False},
         }
 
     def action_view_history(self):

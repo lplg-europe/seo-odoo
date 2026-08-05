@@ -67,12 +67,18 @@ Integrations:
         "views/seo_issue_views.xml",
         "views/seo_history_views.xml",
         "views/seo_keyword_views.xml",
+        "views/seo_performance_views.xml",
         "views/seo_ai_prompt_views.xml",
         "views/seo_report_wizard_views.xml",
         "views/res_config_settings_views.xml",
         "report/seo_site_report.xml",
         "data/ir_cron.xml",
     ],
+    "assets": {
+        "web.assets_backend": [
+            "seo_suite/static/src/scss/seo_site_form.scss",
+        ],
+    },
     "images": ["static/description/icon.png"],
     "installable": True,
     "application": True,
