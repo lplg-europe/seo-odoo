@@ -182,6 +182,20 @@
                         </page>
                         <page string="Site issues" name="site_issues">
                             <field name="site_issue_count" invisible="1"/>
+                            <group>
+                                <field name="distinct_issue_count"/>
+                            </group>
+                            <div class="alert alert-info" role="alert"
+                                 invisible="distinct_issue_count == 0">
+                                The finding count above counts every page
+                                separately. Most of them repeat the same
+                                template defect, so the number below is the
+                                one that matters: fix the template once and
+                                every repetition disappears.
+                            </div>
+                            <field name="top_issue_summary" nolabel="1"
+                                   readonly="1"/>
+                            <separator string="Site-level issues"/>
                             <field name="site_issues" nolabel="1"/>
                         </page>
                         <page string="Domain" name="domain">

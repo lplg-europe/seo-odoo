@@ -556,10 +556,17 @@ def page_issues(page):
                 "Canonicalized to another URL (%s)" % effective_canonical,
                 "Expected for duplicates; if this page should rank on "
                 "its own, make it self-canonical."))
+    # Thin content and a low text/HTML ratio describe the same page from
+    # two angles. Raising both charged one defect twice, so the ratio is
+    # reported inside this issue when it applies and never on its own.
     if page["word_count"] < THIN_CONTENT_WORDS:
+        ratio = page["text_ratio"]
+        thin_ratio = 0 < ratio < LOW_TEXT_RATIO
         issues.append(_issue(
             "warning", "content",
-            "Thin content (%d words)" % page["word_count"],
+            "Thin content (%d words%s)" % (
+                page["word_count"],
+                ", %d%% text" % ratio if thin_ratio else ""),
             "Expand the page to 300+ words of genuinely useful content, "
             "or merge it into a stronger page."))
     if page["images_without_alt"]:
@@ -606,13 +613,12 @@ def page_issues(page):
             % page["mixed_content"],
             "Load all images/scripts/styles over https:// — browsers "
             "block or flag mixed content."))
-    if page["unsafe_blank_links"]:
-        issues.append(_issue(
-            "info", "security",
-            '%d target="_blank" link(s) without rel="noopener"'
-            % page["unsafe_blank_links"],
-            'Add rel="noopener" (or noreferrer) to target="_blank" '
-            "links to prevent tab-nabbing."))
+    # No issue is raised for target="_blank" without rel="noopener".
+    # Chrome 88, Firefox 79 and Safari 12.1 all apply noopener implicitly
+    # since 2021, so tab-nabbing is no longer reachable through that path.
+    # The count stays on the page dict for anyone auditing legacy browsers,
+    # but reporting it inflated audits by one finding per page for a risk
+    # that no current browser has.
     if page["is_html"] and page["internal_links"] + page["external_links"] == 0:
         issues.append(_issue(
             "warning", "links", "Dead-end page (no outgoing links)",
@@ -631,11 +637,15 @@ def page_issues(page):
             "Slow response (%.1fs)" % page["response_time"],
             "Aim for under 1s server response: caching, image "
             "optimization, faster hosting."))
-    if 0 < page["text_ratio"] < LOW_TEXT_RATIO:
+    if (0 < page["text_ratio"] < LOW_TEXT_RATIO
+            and page["word_count"] >= THIN_CONTENT_WORDS):
+        # Only worth its own line when the page has enough words: the
+        # markup, not the writing, is what drowns the text.
         issues.append(_issue(
             "info", "content",
             "Low text/HTML ratio (%d%%)" % page["text_ratio"],
-            "Reduce markup bloat or add real text content."))
+            "Reduce markup bloat — the page has enough text, but it is "
+            "buried under markup."))
     return issues
 
 

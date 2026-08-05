@@ -251,6 +251,15 @@ class SeoSite(models.Model):
     score = fields.Integer(
         compute="_compute_stats", string="Score",
         help="Average of page scores (0-100).")
+    distinct_issue_count = fields.Integer(
+        compute="_compute_stats", string="Distinct defects",
+        help="How many *different* defects exist, ignoring how many pages "
+             "repeat them. A template flaw shows up on every page but is "
+             "one fix — this is the number of things to actually do.")
+    top_issue_summary = fields.Text(
+        compute="_compute_stats", string="Most repeated defects",
+        help="The defects affecting the most pages: fix these templates "
+             "first, each one clears dozens of findings at once.")
     avg_response_time = fields.Float(
         compute="_compute_stats", string="Avg response time (s)",
         digits=(6, 2))
@@ -288,6 +297,17 @@ class SeoSite(models.Model):
                 lambda a: a.error or a.status_code >= 400))
             rec.score = (
                 round(sum(audits.mapped("score")) / count) if count else 0)
+            # "731 problems" reads as 731 things to do; in reality a
+            # handful of template defects repeat across a hundred pages.
+            # Grouping by the number-free message tells the truth about
+            # the workload — and about which template to fix first.
+            repeats = Counter(
+                re.sub(r"\d+", "N", issue.message)
+                for issue in rec.issue_ids)
+            rec.distinct_issue_count = len(repeats)
+            rec.top_issue_summary = "\n".join(
+                "%4d pages — %s" % (n, msg)
+                for msg, n in repeats.most_common(10)) or "No issue found"
             rec.avg_response_time = (
                 sum(audits.mapped("response_time")) / count if count else 0.0)
             rec.avg_word_count = (
