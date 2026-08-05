@@ -130,8 +130,13 @@ class SeoKeywordHistory(models.Model):
         related="keyword_id.site_id", store=True, index=True)
     date = fields.Datetime(
         string="Date", required=True, default=fields.Datetime.now)
-    position = fields.Float(string="Position", digits=(6, 1), readonly=True)
+    # A rank and a rate are averaged, never summed: two days at position 8
+    # do not make position 16. Clicks and impressions, on the other hand,
+    # are genuine counts and stay additive over a period.
+    position = fields.Float(
+        string="Position", digits=(6, 1), readonly=True, aggregator="avg")
     clicks = fields.Integer(string="Clicks", readonly=True)
     impressions = fields.Integer(string="Impressions", readonly=True)
-    ctr = fields.Float(string="CTR (%)", digits=(6, 2), readonly=True)
+    ctr = fields.Float(
+        string="CTR (%)", digits=(6, 2), readonly=True, aggregator="avg")
     page = fields.Char(string="Ranking page", readonly=True)

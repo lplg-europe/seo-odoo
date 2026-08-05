@@ -32,22 +32,38 @@ class SeoCrawlHistory(models.Model):
     date = fields.Datetime(
         string="Crawl date", required=True,
         default=fields.Datetime.now)
-    score = fields.Integer(string="Score", readonly=True)
+    # Every field here is a state measured at one point in time, not a
+    # quantity produced by the crawl. Summing them across snapshots is
+    # meaningless — two crawls scoring 55 do not make a site scoring 110,
+    # and the graph view aggregates with SUM unless told otherwise. This
+    # showed as a score axis climbing to 450 on a 0-100 metric.
+    score = fields.Integer(string="Score", readonly=True, aggregator="avg")
     score_delta = fields.Integer(
         string="Δ score", readonly=True,
         help="Score difference with the previous crawl.")
-    page_count = fields.Integer(string="Pages", readonly=True)
-    discovered_count = fields.Integer(string="URLs discovered", readonly=True)
-    error_page_count = fields.Integer(string="Pages in error", readonly=True)
-    issue_count = fields.Integer(string="Issues", readonly=True)
-    critical_count = fields.Integer(string="Critical", readonly=True)
-    warning_count = fields.Integer(string="Warnings", readonly=True)
-    info_count = fields.Integer(string="Info", readonly=True)
-    site_issue_count = fields.Integer(string="Site issues", readonly=True)
-    broken_link_count = fields.Integer(string="Broken links", readonly=True)
+    page_count = fields.Integer(
+        string="Pages", readonly=True, aggregator="avg")
+    discovered_count = fields.Integer(
+        string="URLs discovered", readonly=True, aggregator="avg")
+    error_page_count = fields.Integer(
+        string="Pages in error", readonly=True, aggregator="avg")
+    issue_count = fields.Integer(
+        string="Issues", readonly=True, aggregator="avg")
+    critical_count = fields.Integer(
+        string="Critical", readonly=True, aggregator="avg")
+    warning_count = fields.Integer(
+        string="Warnings", readonly=True, aggregator="avg")
+    info_count = fields.Integer(
+        string="Info", readonly=True, aggregator="avg")
+    site_issue_count = fields.Integer(
+        string="Site issues", readonly=True, aggregator="avg")
+    broken_link_count = fields.Integer(
+        string="Broken links", readonly=True, aggregator="avg")
     avg_response_time = fields.Float(
-        string="Avg response (s)", digits=(6, 2), readonly=True)
-    avg_word_count = fields.Integer(string="Avg words", readonly=True)
+        string="Avg response (s)", digits=(6, 2), readonly=True,
+        aggregator="avg")
+    avg_word_count = fields.Integer(
+        string="Avg words", readonly=True, aggregator="avg")
     new_issue_count = fields.Integer(string="New issues", readonly=True)
     resolved_issue_count = fields.Integer(
         string="Resolved issues", readonly=True)

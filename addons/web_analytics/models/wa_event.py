@@ -54,14 +54,20 @@ class WebAnalyticsEvent(models.Model):
         string="Country", size=2, index=True,
         help="ISO country code (needs a GeoIP database configured on "
              "the Odoo server; empty otherwise).")
+    # Web Vitals are per-visit measurements: the useful aggregate is the
+    # average, never the sum. Summed over a day of traffic they produce
+    # numbers in the minutes for a metric counted in milliseconds.
     lcp_ms = fields.Integer(
-        string="LCP (ms)", help="Largest Contentful Paint.")
+        string="LCP (ms)", help="Largest Contentful Paint.",
+        aggregator="avg")
     fcp_ms = fields.Integer(
-        string="FCP (ms)", help="First Contentful Paint.")
+        string="FCP (ms)", help="First Contentful Paint.",
+        aggregator="avg")
     ttfb_ms = fields.Integer(
-        string="TTFB (ms)", help="Time To First Byte.")
+        string="TTFB (ms)", help="Time To First Byte.",
+        aggregator="avg")
     cls_milli = fields.Integer(
-        string="CLS (x1000)",
+        string="CLS (x1000)", aggregator="avg",
         help="Cumulative Layout Shift multiplied by 1000 "
              "(100 = CLS 0.1, the 'good' threshold).")
 

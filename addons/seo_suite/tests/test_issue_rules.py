@@ -104,5 +104,43 @@ class TestPenaltyIsChargedOnce(BaseCase):
             page_score(p), 100 - SEVERITY_WEIGHT["warning"])
 
 
+@tagged("standard", "at_install")
+class TestDefectGrouping(BaseCase):
+    """One rule must count as one defect, whatever its per-page detail."""
+
+    def setUp(self):
+        super().setUp()
+        from ..models.seo_site import _defect_label
+        self.label = _defect_label
+
+    def test_same_rule_with_different_details_groups_once(self):
+        self.assertEqual(
+            self.label("Thin content (163 words, 3% text)"),
+            self.label("Thin content (163 words)"))
+
+    def test_canonical_targets_do_not_split_the_defect(self):
+        self.assertEqual(
+            self.label("Canonicalized to another URL (https://a.be/x)"),
+            self.label("Canonicalized to another URL (https://b.com/y)"))
+
+    def test_inline_parenthesis_is_preserved(self):
+        # "image(s)" is part of the wording, not a per-page detail
+        self.assertEqual(
+            self.label("3 image(s) without alt attribute"),
+            "N image(s) without alt attribute")
+
+    def test_a_varying_count_does_not_split_the_defect(self):
+        # regression: dropping the number normalization turned one rule
+        # into one defect per distinct count, inflating the total
+        self.assertEqual(
+            self.label("1 image(s) without alt attribute"),
+            self.label("7 image(s) without alt attribute"))
+
+    def test_distinct_rules_stay_distinct(self):
+        self.assertNotEqual(
+            self.label("Title too short (12 chars)"),
+            self.label("Title too long (98 chars)"))
+
+
 if __name__ == "__main__":  # standalone: python -m unittest
     unittest.main()

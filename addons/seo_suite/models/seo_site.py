@@ -18,6 +18,23 @@ from ..crawler import analyze_site, crawl, progress_message
 _logger = logging.getLogger(__name__)
 
 
+def _defect_label(message):
+    """The defect behind an issue message, without its per-page detail.
+
+    Grouping on the raw message split one rule into several defects:
+    "Thin content (163 words)" and "Thin content (163 words, 3% text)"
+    are the same thing to fix, and three pages canonicalized to three
+    different URLs are one canonical problem.
+
+    Two normalizations are needed and neither is enough alone. Numbers go
+    first, so "1 image(s)" and "3 image(s)" meet; then a trailing
+    parenthesis is dropped, so the detail that varies per page goes away
+    while an inline "image(s)" survives.
+    """
+    label = re.sub(r"\d+", "N", message)
+    return re.sub(r"\s*\([^)]*\)\s*$", "", label).strip() or label
+
+
 class SeoSite(models.Model):
     _name = "seo.site"
     _description = "SEO Site (multi-page crawl)"
@@ -302,8 +319,7 @@ class SeoSite(models.Model):
             # Grouping by the number-free message tells the truth about
             # the workload — and about which template to fix first.
             repeats = Counter(
-                re.sub(r"\d+", "N", issue.message)
-                for issue in rec.issue_ids)
+                _defect_label(issue.message) for issue in rec.issue_ids)
             rec.distinct_issue_count = len(repeats)
             rec.top_issue_summary = "\n".join(
                 "%4d pages — %s" % (n, msg)
@@ -1097,7 +1113,11 @@ class SeoSite(models.Model):
             "res_model": "seo.crawl.history",
             "view_mode": "graph,list,form",
             "domain": [("site_id", "=", self.id)],
-            "context": {"default_site_id": self.id},
+            # fill_temporal makes the graph invent a zero for every day
+            # without a crawl, so a site measured twice a week looks like
+            # it collapses and recovers between measurements. A score is
+            # only known on the days it was measured: join those points.
+            "context": {"default_site_id": self.id, "fill_temporal": False},
         }
 
     def _report_issue_groups(self):
