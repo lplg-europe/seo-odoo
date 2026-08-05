@@ -306,6 +306,20 @@ class SeoSite(models.Model):
                 lambda a: a.status_code == 200 and not a.error
                 and "noindex" not in (a.meta_robots or "").lower())
 
+    def _notify(self, title, message, kind="success"):
+        """Toast returned by a button, so no action ever ends in silence.
+
+        A long operation that finishes without a word leaves the user
+        wondering whether it ran at all — the Search Console sync filled
+        the property field and stayed mute, which read as a failure.
+        """
+        return {
+            "type": "ir.actions.client",
+            "tag": "display_notification",
+            "params": {"title": title, "message": message,
+                       "type": kind, "sticky": False},
+        }
+
     def _crawl_progress_callback(self):
         """Live progress toasts for the person who clicked Crawl.
 
@@ -387,7 +401,12 @@ class SeoSite(models.Model):
         except Exception:  # noqa: BLE001 — never let DNS break a crawl
             _logger.exception("Domain check failed for %s", self.name)
         self._create_history_snapshot()
-        return True
+        return self._notify(
+            "Crawl finished",
+            "%d page(s) in %d s — score %d/100, %d critical, %d warning(s)."
+            % (len(pages), round(time.monotonic() - started), self.score,
+               self.critical_count, self.warning_count),
+            kind="warning" if self.critical_count else "success")
 
     def _apply_domain_check(self):
         """Run the DNS/registrar diagnosis and store its outcome."""
@@ -407,12 +426,22 @@ class SeoSite(models.Model):
             "site_issues": merged,
             "site_issue_count": count,
         })
+        return len(res["issues"])
 
     def action_check_domain(self):
         """Button: diagnose the domain without waiting for a crawl."""
         self.ensure_one()
-        self._apply_domain_check()
-        return True
+        found = self._apply_domain_check()
+        where = " · ".join(p for p in (
+            self.domain_registrar, self.domain_dns_provider) if p)
+        return self._notify(
+            "Domain checked",
+            "%s%s%s" % (
+                where or "Records read",
+                " — " if where else "",
+                "%d finding(s), see the Domain tab." % found if found
+                else "nothing wrong found."),
+            kind="success" if not found else "warning")
 
     def _issue_keys(self):
         """Stable identifiers of the current issues, for cross-crawl diffs.
@@ -607,7 +636,15 @@ class SeoSite(models.Model):
             "google_last_sync": fields.Datetime.now(),
             "gsc_top_queries": "\n".join(top) or "No query data yet",
         })
-        return True
+        with_data = self.audit_ids.filtered(
+            lambda a: a.gsc_clicks or a.gsc_impressions)
+        return self._notify(
+            "Search Console connected",
+            "%s — %d page(s) with data, %d clicks and %d impressions over "
+            "28 days, %d quer%s collected." % (
+                prop, len(with_data), sum(with_data.mapped("gsc_clicks")),
+                sum(with_data.mapped("gsc_impressions")), len(query_rows),
+                "y" if len(query_rows) == 1 else "ies"))
 
     def _sync_keywords(self, token, prop, query_rows):
         """Refresh tracked keywords from GSC and add a daily history point."""
@@ -736,7 +773,15 @@ class SeoSite(models.Model):
                     "sticky": True,
                 },
             }
-        return True
+        remaining = len(self.audit_ids.filtered(
+            lambda a: a.audit_date and not a.index_verdict))
+        return self._notify(
+            "Indexation checked",
+            "%d page(s) inspected — %d indexed, %d not.%s" % (
+                done, self.indexed_page_count, self.not_indexed_page_count,
+                " %d page(s) left for the next run (daily quota)."
+                % remaining if remaining else ""),
+            kind="warning" if self.not_indexed_page_count else "success")
 
     AI_BULK_BATCH = 8  # pages per click, to stay within the request timeout
 
