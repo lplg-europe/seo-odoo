@@ -36,6 +36,9 @@
                             string="Check indexation" icon="fa-check-square-o"
                             invisible="page_count == 0"
                             help="Google URL Inspection per page: is it really indexed? Takes ~1-2s per page (max 50)."/>
+                    <button name="action_check_domain" type="object"
+                            string="Check domain" icon="fa-globe"
+                            help="DNS, registrar, mail — where the domain lives, whether the naked domain works over HTTPS, and whether SPF/DMARC protect deliverability. Also runs with every crawl."/>
                     <button name="action_ai_suggest_missing_metas" type="object"
                             string="AI: missing metas" icon="fa-magic"
                             invisible="page_count == 0"
@@ -180,6 +183,32 @@
                         <page string="Site issues" name="site_issues">
                             <field name="site_issue_count" invisible="1"/>
                             <field name="site_issues" nolabel="1"/>
+                        </page>
+                        <page string="Domain" name="domain">
+                            <div class="alert alert-info" role="alert">
+                                Where the domain actually lives — registrar,
+                                DNS zone, mailboxes — and whether both host
+                                variants (with and without www) reach the
+                                site over HTTPS. This is the first thing to
+                                check on a site you do not host: the classic
+                                failure is a naked domain whose redirect
+                                only listens on HTTP, invisible to a page
+                                crawl but broken for every visitor who
+                                types the address by hand.
+                            </div>
+                            <group>
+                                <group>
+                                    <field name="domain_registrar"/>
+                                    <field name="domain_dns_provider"/>
+                                    <field name="domain_mail_provider"/>
+                                </group>
+                                <group>
+                                    <field name="domain_expires"/>
+                                    <field name="domain_dnssec"/>
+                                    <field name="domain_last_check"/>
+                                </group>
+                            </group>
+                            <field name="domain_summary" nolabel="1"/>
                         </page>
                         <page string="Cannibalization" name="cannibalization">
                             <div class="alert alert-info" role="alert">

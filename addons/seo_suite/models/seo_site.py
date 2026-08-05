@@ -4,6 +4,8 @@ audits every page, then reports cross-page issues."""
 import json
 import logging
 import re
+import threading
+import time
 from collections import Counter
 from datetime import timedelta
 from urllib.parse import urlsplit
@@ -11,7 +13,7 @@ from urllib.parse import urlsplit
 from odoo import api, fields, models
 from odoo.exceptions import UserError
 
-from ..crawler import analyze_site, crawl
+from ..crawler import analyze_site, crawl, progress_message
 
 _logger = logging.getLogger(__name__)
 
@@ -226,6 +228,20 @@ class SeoSite(models.Model):
     site_issues = fields.Text(string="Site-level issues", readonly=True)
     site_issue_count = fields.Integer(string="Site issue count", readonly=True)
 
+    # Domain-level diagnosis (dns_check.py): where the domain lives and
+    # whether both host variants actually work. Findings are merged into
+    # site_issues so they flow into the client reports unchanged.
+    domain_registrar = fields.Char(string="Registrar", readonly=True)
+    domain_dns_provider = fields.Char(string="DNS hosted at", readonly=True)
+    domain_mail_provider = fields.Char(string="Mail hosted at", readonly=True)
+    domain_expires = fields.Date(string="Domain expires", readonly=True)
+    domain_dnssec = fields.Boolean(string="DNSSEC", readonly=True)
+    domain_last_check = fields.Datetime(string="Last domain check", readonly=True)
+    domain_summary = fields.Text(
+        string="DNS snapshot", readonly=True,
+        help="Raw records and probe results — what nslookup/whois would "
+             "tell you, kept here so nobody has to open a terminal.")
+
     page_count = fields.Integer(compute="_compute_stats", string="Pages crawled")
     error_page_count = fields.Integer(compute="_compute_stats", string="Pages in error")
     issue_count = fields.Integer(compute="_compute_stats", string="Page issues")
@@ -290,16 +306,45 @@ class SeoSite(models.Model):
                 lambda a: a.status_code == 200 and not a.error
                 and "noindex" not in (a.meta_robots or "").lower())
 
+    def _crawl_progress_callback(self):
+        """Live progress toasts for the person who clicked Crawl.
+
+        A 130-page crawl runs one to two minutes behind a generic spinner;
+        this pushes '40/130 pages — about 1 min left' through the bus so
+        the wait is measurable. Each send needs a commit (bus messages
+        leave post-commit), which is safe here because the crawl writes
+        nothing before its final upsert — only under tests it must stay
+        silent, as a commit would break their rollback.
+        """
+        if getattr(threading.current_thread(), "testing", False):
+            return None
+        state = {"t0": time.monotonic(), "last": 0.0}
+
+        def cb(done, total):
+            now = time.monotonic()
+            if now - state["last"] < 10 and done != total:
+                return
+            state["last"] = now
+            self.env.user._bus_send("simple_notification", {
+                "type": "info", "sticky": False,
+                "message": progress_message(
+                    done, total, now - state["t0"]),
+            })
+            self.env.cr.commit()
+        return cb
+
     def action_crawl(self):
         self.ensure_one()
         if not (self.name or "").strip():
             raise UserError("Please enter the site URL to crawl.")
+        started = time.monotonic()
         result = crawl(
             self.name,
             max_pages=max(1, self.max_pages or 30),
             use_sitemap=self.use_sitemap,
             follow_links=self.follow_links,
             check_links=self.check_links,
+            progress=self._crawl_progress_callback(),
         )
         pages = result["pages"]
         root = pages[0]
@@ -335,7 +380,38 @@ class SeoSite(models.Model):
             "site_issues": "\n".join(site_issues) or "No site-level issues",
             "site_issue_count": len(site_issues),
         })
+        # Before the history snapshot, so domain findings diff cleanly
+        # across crawls like any other site-level issue.
+        try:
+            self._apply_domain_check()
+        except Exception:  # noqa: BLE001 — never let DNS break a crawl
+            _logger.exception("Domain check failed for %s", self.name)
         self._create_history_snapshot()
+        return True
+
+    def _apply_domain_check(self):
+        """Run the DNS/registrar diagnosis and store its outcome."""
+        self.ensure_one()
+        from ..dns_check import check_domain, merge_domain_lines
+        res = check_domain(self.name)
+        merged, count = merge_domain_lines(self.site_issues, res["issues"])
+        f = res["fields"]
+        self.write({
+            "domain_registrar": f["registrar"],
+            "domain_dns_provider": f["dns_provider"],
+            "domain_mail_provider": f["mail_provider"],
+            "domain_expires": f["expires"] or False,
+            "domain_dnssec": f["dnssec"],
+            "domain_last_check": fields.Datetime.now(),
+            "domain_summary": res["summary"],
+            "site_issues": merged,
+            "site_issue_count": count,
+        })
+
+    def action_check_domain(self):
+        """Button: diagnose the domain without waiting for a crawl."""
+        self.ensure_one()
+        self._apply_domain_check()
         return True
 
     def _issue_keys(self):

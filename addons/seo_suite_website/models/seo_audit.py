@@ -7,6 +7,22 @@ from odoo import api, fields, models
 from odoo.exceptions import UserError
 
 
+def bare_host(value):
+    """Comparable host from a URL, a domain setting, or a bare hostname.
+
+    Odoo's website.domain is free text — "example.com", "www.example.com"
+    or "https://example.com/" are all seen in the wild — so everything is
+    reduced to a lowercase host without the www prefix before comparing.
+    """
+    value = (value or "").strip()
+    if not value:
+        return ""
+    if "://" not in value:
+        value = "https://" + value
+    host = urlsplit(value).netloc.lower().split("@")[-1].split(":")[0]
+    return host[4:] if host.startswith("www.") else host
+
+
 class SeoAudit(models.Model):
     _inherit = "seo.audit"
 
@@ -19,13 +35,29 @@ class SeoAudit(models.Model):
 
     @api.depends("final_url", "name")
     def _compute_website_page(self):
+        """Match on host AND path — never on the path alone.
+
+        Matching by path was a data-integrity bug: auditing a client site
+        and clicking "Apply AI metas" wrote a meta meant for
+        client.be/contactus onto the local /contactus, because both share
+        the path. The host now has to match the website's configured
+        domain, so a page is only ever updated on the site it belongs to.
+        A website with no domain set matches nothing — see
+        action_apply_meta_to_website for the message that says so.
+        """
         Page = self.env["website.page"]
         for rec in self:
-            path = urlsplit(rec.final_url or rec.name or "").path or "/"
-            page = Page.search([("url", "=", path)], limit=1)
-            if not page and path != "/" and path.endswith("/"):
-                page = Page.search([("url", "=", path.rstrip("/"))], limit=1)
-            rec.website_page_id = page
+            split = urlsplit(rec.final_url or rec.name or "")
+            path = split.path or "/"
+            host = bare_host(split.netloc)
+            paths = [path] if path == "/" else [path, path.rstrip("/")]
+            match = Page.browse()
+            if host:
+                for page in Page.search([("url", "in", list(set(paths)))]):
+                    if bare_host(page.website_id.domain) == host:
+                        match = page
+                        break
+            rec.website_page_id = match
 
     def action_apply_meta_to_website(self):
         """Write the AI-suggested title/meta onto the matched page."""
@@ -40,8 +72,13 @@ class SeoAudit(models.Model):
             if not rec.website_page_id:
                 if len(self) == 1:
                     raise UserError(
-                        "No matching Odoo Website page for %s. Only static "
-                        "website pages can be updated here." % rec.name)
+                        "No Odoo Website page on this database matches %s.\n\n"
+                        "Pages are matched on domain *and* path, so a site "
+                        "hosted elsewhere is never touched. If this URL is "
+                        "one of your own websites, set its address in "
+                        "Website → Configuration → Settings → Domain, then "
+                        "try again. Only static website pages can be "
+                        "updated here." % rec.name)
                 continue
             values = {}
             if rec.ai_title:

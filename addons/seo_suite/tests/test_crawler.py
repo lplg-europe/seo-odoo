@@ -11,7 +11,8 @@ import unittest  # noqa: F401 — standalone runner entry point below
 from odoo.tests import BaseCase, tagged
 
 from ..crawler import (
-    in_prefix, normalize_link, root_prefix, same_site, _requestable)
+    in_prefix, normalize_link, progress_message, root_prefix, same_site,
+    _requestable)
 
 HOST = "www.caresolutions.be"
 PAGE = "https://www.caresolutions.be/fr/service-desk/"
@@ -114,6 +115,26 @@ class TestRequestableUrls(BaseCase):
         out = normalize_link(PAGE, "/actualites…", HOST)
         self.assertIsNotNone(out)
         out.encode("ascii")
+
+
+@tagged("standard", "at_install")
+class TestProgressMessage(BaseCase):
+    """The wait must be measurable, and the estimate honest."""
+
+    def test_no_estimate_before_the_first_page(self):
+        self.assertEqual(progress_message(0, 130, 0), "Crawling…")
+
+    def test_estimate_uses_the_observed_pace(self):
+        # 40 pages in 24 s -> 0.6 s/page -> 90 pages left ~ 54 s
+        self.assertEqual(
+            progress_message(40, 130, 24), "40/130 pages — about 54 s left")
+
+    def test_long_crawls_switch_to_minutes(self):
+        self.assertIn("min left", progress_message(10, 500, 60))
+
+    def test_last_pages_say_almost_done(self):
+        self.assertEqual(
+            progress_message(130, 130, 78), "130/130 pages — almost done")
 
 
 if __name__ == "__main__":  # standalone: python -m unittest

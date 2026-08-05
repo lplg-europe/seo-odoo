@@ -992,8 +992,28 @@ def discover_sitemap_urls(origin, robots_sitemaps=None, timeout=10):
     return urls[:MAX_SITEMAP_URLS]
 
 
+def progress_message(done, total, elapsed):
+    """Human progress line with a measured time estimate.
+
+    The estimate comes from the observed pace, not a guess: after `done`
+    pages in `elapsed` seconds, the remaining `total - done` pages will
+    take about the same per-page time. `total` is itself a moving target
+    while the frontier grows, which is why the text says "about".
+    """
+    if done <= 0 or elapsed <= 0:
+        return "Crawling…"
+    remaining = max(total - done, 0) * (elapsed / done)
+    if remaining >= 90:
+        eta = "about %d min left" % round(remaining / 60.0)
+    elif remaining >= 5:
+        eta = "about %d s left" % round(remaining)
+    else:
+        eta = "almost done"
+    return "%d/%d pages — %s" % (done, total, eta)
+
+
 def crawl(root_url, max_pages=30, use_sitemap=True, follow_links=True,
-          check_links=False, delay=DEFAULT_DELAY, timeout=15):
+          check_links=False, delay=DEFAULT_DELAY, timeout=15, progress=None):
     """Crawl a site starting at root_url.
 
     Returns {"pages": [page dicts], "discovered": int, "disallowed": int,
@@ -1004,6 +1024,11 @@ def crawl(root_url, max_pages=30, use_sitemap=True, follow_links=True,
     With check_links=True, URLs discovered but not crawled (over max_pages)
     get a lightweight HEAD check so broken internal links surface even
     beyond the crawl budget (capped at MAX_LINK_CHECKS).
+
+    `progress`, when given, is called as progress(done, expected_total)
+    after every fetched page; expected_total is bounded by max_pages but
+    grows with the link frontier. Callback errors are swallowed — no
+    observer may break a crawl.
     """
     root_url = (root_url or "").strip()
     if not root_url.startswith(("http://", "https://")):
@@ -1066,6 +1091,11 @@ def crawl(root_url, max_pages=30, use_sitemap=True, follow_links=True,
         page = fetch_page(url, timeout=timeout)
         page["source"] = source
         pages.append(page)
+        if progress:
+            try:
+                progress(len(pages), min(max_pages, len(pages) + len(queue)))
+            except Exception:  # noqa: BLE001 — observer only, never fatal
+                pass
         if follow_links and page["is_html"]:
             enqueue(page["final_url"], page["links"], "link")
 
